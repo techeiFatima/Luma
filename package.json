@@ -20,7 +20,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio --schema=prisma/schema.prisma",
     "demo": "tsx scripts/demo.ts",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "eval": "tsx evals/run.ts",
+    "eval:dry": "EVAL_DRY_RUN=1 tsx evals/run.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
