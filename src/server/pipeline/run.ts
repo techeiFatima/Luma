@@ -16,6 +16,8 @@ export interface PipelineOptions {
   extractor?: LoopExtractor;
   since?: Date;
   limit?: number;
+  /** Provider cursor from the last sync; enables an incremental fetch. */
+  cursor?: string | null;
   now?: Date;
 }
 
@@ -56,6 +58,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineSum
     provider: options.provider,
     since: options.since,
     limit: options.limit,
+    cursor: options.cursor,
   });
 
   // Only unprocessed, non-bulk documents reach the model.

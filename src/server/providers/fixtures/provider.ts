@@ -24,6 +24,6 @@ export class FixtureMailProvider implements MailProvider {
       messages = messages.filter((message) => message.sentAt >= since);
     }
     if (options.limit) messages = messages.slice(0, options.limit);
-    return { messages, cursor: null };
+    return { messages, cursor: null, full: true };
   }
 }

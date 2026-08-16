@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/db";
-import { BadRequestError, isAppError, UpstreamError } from "@/lib/errors";
+import { BadRequestError, ConnectionRevokedError, isAppError, UpstreamError } from "@/lib/errors";
 import { DAY_MS } from "@/lib/time";
 import { route } from "@/server/http/route";
 import { FixtureMailProvider } from "@/server/providers/fixtures/provider";
-import { authorizedClientForAccount } from "@/server/providers/gmail/oauth";
+import { authorizedClientForAccount, markAccountRevoked } from "@/server/providers/gmail/oauth";
 import { GmailProvider } from "@/server/providers/gmail/provider";
 import type { MailProvider } from "@/server/providers/types";
 import { runPipeline } from "@/server/pipeline/run";
@@ -25,17 +25,28 @@ export const POST = route("sync", async ({ requireUserId, log }) => {
   const provider: MailProvider =
     account.provider === "fixtures"
       ? new FixtureMailProvider(account.providerAccountId)
-      : new GmailProvider(await authorizedClientForAccount(account.id));
+      : GmailProvider.forAuth(await authorizedClientForAccount(account.id));
 
-  // Re-read a small overlap window so a message that arrived mid-sync isn't
-  // skipped; ingestion is idempotent, so overlap is free.
+  // With a cursor the provider fetches a delta and `since` is unused. Without
+  // one it re-reads a window, overlapping the last sync by a day so a message
+  // that landed mid-sync isn't skipped; ingestion is idempotent, so overlap is
+  // free.
+  const cursor = account.syncState?.cursor ?? null;
   const since = account.syncState?.lastSyncedAt
     ? new Date(account.syncState.lastSyncedAt.getTime() - DAY_MS)
     : new Date(Date.now() - INITIAL_LOOKBACK_DAYS * DAY_MS);
 
   try {
-    return await runPipeline({ userId, accountId: account.id, provider, since });
+    return await runPipeline({ userId, accountId: account.id, provider, since, cursor });
   } catch (error) {
+    // A withdrawn grant is a state change, not a transient failure: record it
+    // so the UI stops offering a sync that cannot succeed and asks the user to
+    // reconnect instead.
+    if (error instanceof ConnectionRevokedError) {
+      await markAccountRevoked(account.id, "sync rejected by provider");
+      throw error;
+    }
+
     // Record the failure against the account so the UI can explain itself,
     // then rethrow for the shared error handler.
     const message = error instanceof Error ? error.message : String(error);

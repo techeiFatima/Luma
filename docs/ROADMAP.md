@@ -111,8 +111,5 @@ These get worse the longer they wait:
   over quantity" is an intention rather than a measurement.
 - **Cost tracking per user.** Token counts are already on `AiRun`; the
   aggregation is not built.
-- **Incremental Gmail sync.** `SyncState.cursor` stores the `historyId` but the
-  provider still does a bounded date-range fetch. Using the history API would
-  cut sync cost significantly on large mailboxes.
 - **Postgres.** SQLite is right for phase 1 and wrong for concurrent users.
   Isolated to `src/lib/db.ts` and the schema's provider.

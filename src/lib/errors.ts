@@ -15,6 +15,7 @@ export type ErrorCode =
   | "not_found"
   | "conflict"
   | "rate_limited"
+  | "reauth_required"
   | "feature_unavailable"
   | "upstream_error"
   | "internal_error";
@@ -86,6 +87,27 @@ export class RateLimitError extends AppError {
 }
 
 /**
+ * The user's grant on a provider is gone — revoked in Google's account UI, a
+ * refresh token that no longer works, or scopes narrowed below what we need.
+ *
+ * Deliberately distinct from `UnauthorizedError`: the Luma session is fine, so
+ * bouncing the user to sign-in would be wrong. The only fix is reconnecting the
+ * provider, which is what the message tells them to do.
+ */
+export class ConnectionRevokedError extends AppError {
+  readonly code = "reauth_required" as const;
+  readonly status = 409;
+
+  constructor(
+    readonly provider: string,
+    message = "Access to your account was revoked. Reconnect it to keep syncing.",
+    context: Record<string, unknown> = {},
+  ) {
+    super(message, { provider, ...context });
+  }
+}
+
+/**
  * A feature is switched off or not configured — a missing API key, OAuth not
  * set up. 503 rather than 500: the request was fine, the capability is absent.
  */
@@ -128,6 +150,7 @@ const DEFAULT_MESSAGES: Record<ErrorCode, string> = {
   not_found: "Not found.",
   conflict: "That conflicts with the current state.",
   rate_limited: "Too many requests. Try again shortly.",
+  reauth_required: "That account needs to be reconnected.",
   feature_unavailable: "That feature is not available on this instance.",
   upstream_error: "An upstream service failed. Try again shortly.",
   internal_error: "Something went wrong on our end.",

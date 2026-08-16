@@ -37,6 +37,13 @@ export interface FetchResult {
   messages: NormalizedMessage[];
   /** Cursor to persist for the next incremental sync, if the provider has one. */
   cursor: string | null;
+  /**
+   * True when this was a complete re-read of the requested window rather than a
+   * delta. Callers use it to decide whether `lastFullSyncAt` moved, so a stale
+   * cursor that keeps forcing full syncs stays visible instead of looking
+   * like a healthy incremental one.
+   */
+  full: boolean;
 }
 
 export interface MailProvider {

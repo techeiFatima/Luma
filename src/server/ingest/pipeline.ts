@@ -12,6 +12,8 @@ export interface IngestOptions {
   provider: MailProvider;
   since?: Date;
   limit?: number;
+  /** Provider cursor from the last sync; enables an incremental fetch. */
+  cursor?: string | null;
 }
 
 export interface IngestSummary {
@@ -21,6 +23,8 @@ export interface IngestSummary {
   unchanged: number;
   bulkFiltered: number;
   cursor: string | null;
+  /** False when the provider served a delta rather than re-reading the window. */
+  full: boolean;
 }
 
 /**
@@ -34,9 +38,10 @@ export interface IngestSummary {
 export async function ingestMessages(options: IngestOptions): Promise<IngestSummary> {
   const { userId, accountId, provider } = options;
 
-  const { messages, cursor } = await provider.fetchMessages({
+  const { messages, cursor, full } = await provider.fetchMessages({
     since: options.since,
     limit: options.limit,
+    cursor: options.cursor,
   });
 
   const summary: IngestSummary = {
@@ -46,6 +51,7 @@ export async function ingestMessages(options: IngestOptions): Promise<IngestSumm
     unchanged: 0,
     bulkFiltered: 0,
     cursor,
+    full,
   };
 
   for (const message of messages) {
@@ -98,10 +104,24 @@ export async function ingestMessages(options: IngestOptions): Promise<IngestSumm
     }
   }
 
+  // The cursor is only advanced once every message it covers is stored, so a
+  // crash mid-ingest leaves the old cursor in place and the next sync re-reads
+  // the same window rather than skipping it.
+  const syncedAt = new Date();
   await prisma.syncState.upsert({
     where: { accountId },
-    create: { accountId, cursor, lastSyncedAt: new Date(), lastFullSyncAt: new Date() },
-    update: { cursor, lastSyncedAt: new Date(), lastError: null },
+    create: {
+      accountId,
+      cursor,
+      lastSyncedAt: syncedAt,
+      ...(full ? { lastFullSyncAt: syncedAt } : {}),
+    },
+    update: {
+      cursor,
+      lastSyncedAt: syncedAt,
+      lastError: null,
+      ...(full ? { lastFullSyncAt: syncedAt } : {}),
+    },
   });
 
   log.info("ingest complete", { userId, accountId, ...summary });

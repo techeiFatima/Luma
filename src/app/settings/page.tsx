@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DisconnectButton } from "@/components/DisconnectButton";
 import { prisma } from "@/lib/db";
 import { getConfig } from "@/config";
 import { getSessionUserId } from "@/lib/session";
@@ -52,14 +53,36 @@ export default async function SettingsPage() {
             <li key={account.id} className="rounded-md border border-[var(--color-line)] p-4">
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-sm font-medium">{account.providerAccountId}</span>
-                <span className="text-xs text-[var(--color-muted)]">{account.provider}</span>
+                <span className="text-xs text-[var(--color-muted)]">
+                  {account.revokedAt ? "disconnected" : account.provider}
+                </span>
               </div>
               <p className="mt-2 text-xs text-[var(--color-muted)]">
                 Granted {formatSentAt(account.grantedAt)}
                 {account.syncState?.lastSyncedAt
                   ? ` · last checked ${formatSentAt(account.syncState.lastSyncedAt)}`
                   : " · never synced"}
+                {account.syncState?.lastFullSyncAt
+                  ? ` · last full read ${formatSentAt(account.syncState.lastFullSyncAt)}`
+                  : ""}
               </p>
+
+              {/* A sync that failed is worth saying out loud — a silently stale
+                  dashboard is exactly the thing this product exists to prevent. */}
+              {account.revokedAt ? (
+                <p className="mt-2 rounded-md border border-[var(--color-line)] bg-[var(--color-canvas)] px-3 py-2 text-xs">
+                  This account is disconnected. Luma is no longer reading it.{" "}
+                  <Link href="/api/auth/google" className="underline underline-offset-2">
+                    Reconnect
+                  </Link>
+                </p>
+              ) : (
+                account.syncState?.lastError && (
+                  <p className="mt-2 rounded-md border border-[var(--color-line)] bg-[var(--color-canvas)] px-3 py-2 text-xs text-[var(--color-now)]">
+                    Last sync failed: {account.syncState.lastError}
+                  </p>
+                )
+              )}
               <div className="mt-2">
                 <p className="text-xs font-medium">Scopes you granted</p>
                 <ul className="mt-1 space-y-0.5">
@@ -70,6 +93,14 @@ export default async function SettingsPage() {
                   ))}
                 </ul>
               </div>
+              {!account.revokedAt && (
+                <div className="mt-3">
+                  <DisconnectButton
+                    accountId={account.id}
+                    accountLabel={account.providerAccountId}
+                  />
+                </div>
+              )}
             </li>
           ))}
         </ul>

@@ -42,6 +42,7 @@ export class EvalMailProvider implements MailProvider {
         labels: email.labels ?? ["INBOX"],
       })),
       cursor: null,
+      full: true,
     };
   }
 }
