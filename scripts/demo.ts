@@ -9,7 +9,7 @@
  */
 import { encryptSecret } from "../src/lib/crypto";
 import { prisma } from "../src/lib/db";
-import { env } from "../src/lib/env";
+import { getConfig } from "../src/config";
 import { formatRelativeDue } from "../src/lib/time";
 import { FixtureMailProvider } from "../src/server/providers/fixtures/provider";
 import { listOpenLoops } from "../src/server/loops/queries";
@@ -18,7 +18,7 @@ import { runPipeline } from "../src/server/pipeline/run";
 const DEMO_EMAIL = "demo@example.com";
 
 async function main() {
-  if (!env.anthropicApiKey) {
+  if (!getConfig().ai.enabled) {
     console.error("ANTHROPIC_API_KEY is not set — extraction cannot run.");
     process.exit(1);
   }
@@ -47,7 +47,7 @@ async function main() {
     update: {},
   });
 
-  console.log(`Running pipeline with ${env.anthropicModel}…\n`);
+  console.log(`Running pipeline with ${getConfig().ai.model}…\n`);
   const summary = await runPipeline({
     userId: user.id,
     accountId: account.id,
@@ -57,7 +57,7 @@ async function main() {
   console.log("Pipeline summary");
   console.log("  messages fetched      ", summary.ingest.fetched);
   console.log("  filtered as bulk      ", summary.ingest.bulkFiltered);
-  console.log("  sent to the model     ", summary.documentsExtracted);
+  console.log("  sent to the model     ", summary.sourceItemsExtracted);
   console.log("  candidates proposed   ", summary.candidatesProposed);
   console.log("  candidates accepted   ", summary.candidatesAccepted);
   console.log("  rejected              ", JSON.stringify(summary.rejections));

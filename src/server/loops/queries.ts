@@ -95,7 +95,7 @@ export async function getLoopDetail(userId: string, loopId: string) {
     include: {
       evidence: {
         include: {
-          document: {
+          sourceItem: {
             select: {
               id: true,
               subject: true,
@@ -118,13 +118,13 @@ export async function getLoopDetail(userId: string, loopId: string) {
 /** Small counters for the dashboard header and the pipeline transparency panel. */
 export async function getDashboardStats(userId: string) {
   const [documents, bulk, processed, pending, loops, lastRun, lastSync] = await Promise.all([
-    prisma.sourceDocument.count({ where: { userId } }),
-    prisma.sourceDocument.count({ where: { userId, isBulk: true } }),
-    prisma.sourceDocument.count({ where: { userId, processedAt: { not: null } } }),
+    prisma.sourceItem.count({ where: { userId } }),
+    prisma.sourceItem.count({ where: { userId, isBulk: true } }),
+    prisma.sourceItem.count({ where: { userId, processedAt: { not: null } } }),
     // Non-bulk mail that was fetched but never successfully analyzed. Anything
     // here means the last run did not finish, and the dashboard must say so
     // rather than presenting an empty list as "nothing to do".
-    prisma.sourceDocument.count({
+    prisma.sourceItem.count({
       where: { userId, isBulk: false, processedAt: null },
     }),
     prisma.openLoop.count({ where: { userId, status: "open" } }),

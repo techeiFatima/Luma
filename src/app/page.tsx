@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { env } from "@/lib/env";
+import { getConfig } from "@/config";
 import { getSessionUserId } from "@/lib/session";
 import { ConnectPanel } from "@/components/ConnectPanel";
 import { LoopCard } from "@/components/LoopCard";
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const userId = await getSessionUserId();
-  const googleConfigured = Boolean(env.googleClientId && env.googleClientSecret);
+  const googleConfigured = getConfig().google.enabled;
 
   if (!userId) {
     return <ConnectPanel googleConfigured={googleConfigured} />;
@@ -24,7 +24,8 @@ export default async function DashboardPage() {
   }
 
   // Urgency is a function of the current time, so scores are refreshed on read.
-  await rescoreOpenLoops(userId);
+  const now = new Date();
+  await rescoreOpenLoops(userId, now);
 
   const [{ items, total }, stats] = await Promise.all([
     listOpenLoops(userId),
@@ -78,7 +79,7 @@ export default async function DashboardPage() {
       ) : (
         <ul className="space-y-3">
           {items.map((loop) => (
-            <LoopCard key={loop.id} loop={loop} />
+            <LoopCard key={loop.id} loop={loop} now={now} />
           ))}
         </ul>
       )}
@@ -105,7 +106,7 @@ export default async function DashboardPage() {
         </dl>
         <p className="mt-3 text-xs text-[var(--color-muted)]">
           {stats.lastSyncedAt
-            ? `Last checked ${formatSentAt(stats.lastSyncedAt)}.`
+            ? `Last checked ${formatSentAt(stats.lastSyncedAt, now)}.`
             : "Not synced yet."}{" "}
           {stats.lastModel ? `Extraction by ${stats.lastModel} (${stats.lastPromptVersion}).` : ""}{" "}
           Ordering is computed by Luma, not by the model.

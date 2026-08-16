@@ -15,7 +15,7 @@ export function DemoButton() {
       const response = await fetch("/api/demo", { method: "POST" });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(body?.error ?? "Could not run the sample inbox");
+        setError(body?.error?.message ?? "Could not run the sample inbox");
         return;
       }
       router.refresh();

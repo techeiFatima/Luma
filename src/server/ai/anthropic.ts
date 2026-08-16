@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { requireAnthropic } from "@/lib/env";
+import { requireAi } from "@/config";
 import { logger } from "@/lib/logger";
 
 const log = logger("ai.client");
@@ -8,7 +8,7 @@ let cached: Anthropic | null = null;
 
 export function anthropicClient(): Anthropic {
   if (!cached) {
-    const { apiKey } = requireAnthropic();
+    const { apiKey } = requireAi();
     cached = new Anthropic({ apiKey });
   }
   return cached;
@@ -18,8 +18,8 @@ export type Effort = NonNullable<Anthropic.OutputConfig["effort"]>;
 
 const EFFORT_LEVELS: readonly Effort[] = ["low", "medium", "high", "xhigh", "max"];
 
-function resolveEffort(requested: string | undefined): Effort {
-  const value = requested ?? process.env.LUMA_EFFORT ?? "high";
+function resolveEffort(requested: string | undefined, fallback: Effort): Effort {
+  const value = requested ?? fallback;
   return (EFFORT_LEVELS as readonly string[]).includes(value) ? (value as Effort) : "high";
 }
 
@@ -53,7 +53,7 @@ export interface StructuredCallResult {
 export async function callStructured(
   options: StructuredCallOptions,
 ): Promise<StructuredCallResult> {
-  const { model } = requireAnthropic();
+  const { model, effort: configuredEffort } = requireAi();
   const client = anthropicClient();
   const startedAt = Date.now();
 
@@ -65,7 +65,7 @@ export async function callStructured(
     system: options.system,
     thinking: { type: "adaptive" },
     output_config: {
-      effort: resolveEffort(options.effort),
+      effort: resolveEffort(options.effort, configuredEffort),
       format: { type: "json_schema", schema: options.jsonSchema },
     },
     messages: [{ role: "user", content: options.userPrompt }],

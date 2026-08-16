@@ -1,8 +1,5 @@
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { setupTestDatabase, type TestDatabase } from "./helpers/db";
 
 import type { CandidateLoop } from "@/server/ai/schema";
 import type { ExtractionBatchResult, ExtractionDocument, LoopExtractor } from "@/server/ai/extract";
@@ -18,8 +15,7 @@ import type { ExtractionBatchResult, ExtractionDocument, LoopExtractor } from "@
  * pinned down this way.
  */
 
-const dbPath = path.join(os.tmpdir(), `luma-test-${process.pid}-${Date.now()}.db`);
-
+let database: TestDatabase;
 let prisma: typeof import("@/lib/db").prisma;
 let runPipeline: typeof import("@/server/pipeline/run").runPipeline;
 let FixtureMailProvider: typeof import("@/server/providers/fixtures/provider").FixtureMailProvider;
@@ -37,7 +33,7 @@ class StubExtractor implements LoopExtractor {
     documents: ExtractionDocument[],
   ): Promise<ExtractionBatchResult[]> {
     this.calls += 1;
-    return [{ documentIds: documents.map((d) => d.sourceId), candidates: this.plan(documents), failure: null }];
+    return [{ sourceItemIds: documents.map((d) => d.sourceId), candidates: this.plan(documents), failure: null }];
   }
 }
 
@@ -87,12 +83,7 @@ async function setupUser() {
 }
 
 beforeAll(async () => {
-  process.env.DATABASE_URL = `file:${dbPath}`;
-  execFileSync(
-    "npx",
-    ["prisma", "db", "push", "--schema=prisma/schema.prisma", "--url", `file:${dbPath}`],
-    { env: { ...process.env, DATABASE_URL: `file:${dbPath}` }, stdio: "pipe" },
-  );
+  database = setupTestDatabase("pipeline");
 
   ({ prisma } = await import("@/lib/db"));
   ({ runPipeline } = await import("@/server/pipeline/run"));
@@ -102,9 +93,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma?.$disconnect();
-  for (const suffix of ["", "-journal", "-wal", "-shm"]) {
-    fs.rmSync(`${dbPath}${suffix}`, { force: true });
-  }
+  database?.destroy();
 });
 
 describe("pipeline", () => {
@@ -123,7 +112,7 @@ describe("pipeline", () => {
     expect(summary.ingest.created).toBe(summary.ingest.fetched);
     // The newsletter and the sale blast never reach the model.
     expect(summary.ingest.bulkFiltered).toBeGreaterThan(0);
-    expect(summary.documentsExtracted).toBe(summary.ingest.fetched - summary.ingest.bulkFiltered);
+    expect(summary.sourceItemsExtracted).toBe(summary.ingest.fetched - summary.ingest.bulkFiltered);
   });
 
   it("turns a verified candidate into a prioritized loop with traceable evidence", async () => {
@@ -146,7 +135,7 @@ describe("pipeline", () => {
 
     const loop = await prisma.openLoop.findFirstOrThrow({
       where: { userId: user.id },
-      include: { evidence: { include: { document: true } } },
+      include: { evidence: { include: { sourceItem: true } } },
     });
 
     expect(loop.title).toBe("Renew professional license");
@@ -154,7 +143,7 @@ describe("pipeline", () => {
     expect(loop.priorityScore).toBeGreaterThan(0);
     // The evidence resolves back to the actual source message.
     expect(loop.evidence.length).toBeGreaterThan(0);
-    expect(loop.evidence[0]!.document.subject).toContain("renew your professional license");
+    expect(loop.evidence[0]!.sourceItem.subject).toContain("renew your professional license");
   });
 
   it("discards a candidate whose evidence is not in the source", async () => {
@@ -211,9 +200,9 @@ describe("pipeline", () => {
     // Nothing changed, so nothing is re-ingested and nothing is re-extracted.
     expect(second.ingest.created).toBe(0);
     expect(second.ingest.unchanged).toBe(second.ingest.fetched);
-    expect(second.documentsExtracted).toBe(0);
+    expect(second.sourceItemsExtracted).toBe(0);
     expect(await prisma.openLoop.count({ where: { userId: user.id } })).toBe(1);
-    expect(await prisma.sourceDocument.count({ where: { userId: user.id } })).toBe(
+    expect(await prisma.sourceItem.count({ where: { userId: user.id } })).toBe(
       first.ingest.fetched,
     );
   });
@@ -239,7 +228,7 @@ describe("pipeline", () => {
     });
 
     // Force re-extraction of the same messages, as a content change would.
-    await prisma.sourceDocument.updateMany({
+    await prisma.sourceItem.updateMany({
       where: { userId: user.id },
       data: { processedAt: null },
     });

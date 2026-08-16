@@ -1,13 +1,20 @@
 // Luma data model.
 //
 // Design notes that matter for the product principles:
-//  * Every OpenLoop is traceable to the source documents it came from
+//  * Every OpenLoop is traceable to the source items it came from
 //    (OpenLoopEvidence holds verbatim quotes that we verify against the source).
 //  * Facts and inference are stored in separate fields. `dueAtBasis` records
 //    whether a date was stated in the source or inferred by the model.
 //  * Ingestion is idempotent: @@unique([accountId, externalId]).
 //  * Duplicate loops are prevented by @@unique([userId, dedupeKey]).
+//  * Consequential work is a proposal first: Action rows carry an explicit
+//    approval lifecycle and an idempotency key, so nothing leaves the app
+//    without the user saying so and nothing can fire twice.
 //  * Every LLM call is recorded in AiRun so the pipeline is observable.
+//
+// SQLite has no native enum type, so status/kind columns are strings backed by
+// the constant unions in src/server/domain/*.ts. Those modules are the source
+// of truth for the allowed values.
 
 generator client {
   provider = "prisma-client-js"
@@ -25,51 +32,59 @@ model User {
   id        String   @id @default(cuid())
   email     String   @unique
   name      String?
+  /// Set when the user asks for their data to be deleted; nothing is read for
+  /// a user whose account is deactivated.
+  deactivatedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  accounts  ConnectedAccount[]
-  documents SourceDocument[]
-  loops     OpenLoop[]
-  aiRuns    AiRun[]
+  accounts      ConnectedAccount[]
+  sourceItems   SourceItem[]
+  loops         OpenLoop[]
+  actions       Action[]
+  notifications Notification[]
+  aiRuns        AiRun[]
+
+  @@index([deactivatedAt])
 }
 
 /// A provider connection the user has explicitly granted.
 /// Tokens are encrypted at rest (see src/lib/crypto.ts).
 model ConnectedAccount {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   userId            String
-  provider          String // "gmail" | "google_calendar"
+  provider          String // "gmail" | "google_calendar" | "fixtures"
   providerAccountId String // e.g. the Google account email
   accessToken       String // encrypted
   refreshToken      String? // encrypted
   expiresAt         DateTime?
   /// Exact OAuth scopes the user granted. Kept verbatim so permissions stay explicit.
   scopes            String
-  grantedAt         DateTime @default(now())
+  grantedAt         DateTime  @default(now())
   revokedAt         DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  syncState SyncState?
-  documents SourceDocument[]
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syncState   SyncState?
+  sourceItems SourceItem[]
 
   @@unique([userId, provider, providerAccountId])
   @@index([userId])
+  @@index([userId, revokedAt])
 }
 
 /// Incremental-sync bookmark for a connected account.
 model SyncState {
-  id              String    @id @default(cuid())
-  accountId       String    @unique
+  id             String    @id @default(cuid())
+  accountId      String    @unique
   /// Provider cursor (Gmail historyId). Null means "no incremental sync yet".
-  cursor          String?
-  lastSyncedAt    DateTime?
-  lastFullSyncAt  DateTime?
-  lastError       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  cursor         String?
+  lastSyncedAt   DateTime?
+  lastFullSyncAt DateTime?
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   account ConnectedAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 }
@@ -80,12 +95,12 @@ model SyncState {
 
 /// A normalized item pulled from a provider. Today that is always an email;
 /// calendar events will use the same table with kind = "calendar_event".
-model SourceDocument {
-  id               String   @id @default(cuid())
+model SourceItem {
+  id               String  @id @default(cuid())
   userId           String
   accountId        String
-  provider         String // "gmail"
-  kind             String // "email"
+  provider         String // "gmail" | "fixtures"
+  kind             String // "email" | "calendar_event"
   /// Provider-native id. Combined with accountId this makes ingestion idempotent.
   externalId       String
   threadExternalId String?
@@ -94,15 +109,15 @@ model SourceDocument {
   fromName  String?
   fromEmail String?
   /// JSON array of recipient addresses.
-  toEmails  String   @default("[]")
+  toEmails  String  @default("[]")
   sentAt    DateTime
   snippet   String?
   /// Plain-text body, truncated at ingestion time.
   bodyText  String
 
   /// True when the deterministic prefilter judged this to be bulk/marketing mail.
-  isBulk    Boolean @default(false)
-  /// Set once the extraction stage has processed this document.
+  isBulk      Boolean   @default(false)
+  /// Set once the extraction stage has processed this item.
   processedAt DateTime?
   /// Hash of the normalized content; lets us skip re-extraction when nothing changed.
   contentHash String
@@ -116,6 +131,7 @@ model SourceDocument {
   @@unique([accountId, externalId])
   @@index([userId, sentAt])
   @@index([userId, processedAt])
+  @@index([userId, isBulk, processedAt])
   @@index([threadExternalId])
 }
 
@@ -164,37 +180,150 @@ model OpenLoop {
   /// Stable key used to prevent duplicate loops across syncs.
   dedupeKey String
 
-  firstSeenAt DateTime  @default(now())
-  lastSeenAt  DateTime  @default(now())
-  resolvedAt  DateTime?
+  firstSeenAt  DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  resolvedAt   DateTime?
   snoozedUntil DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  evidence OpenLoopEvidence[]
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  evidence      OpenLoopEvidence[]
+  actions       Action[]
+  notifications Notification[]
 
   @@unique([userId, dedupeKey])
   @@index([userId, status, priorityScore])
+  @@index([userId, dueAt])
 }
 
-/// A verbatim quote from a source document supporting an OpenLoop.
+/// A verbatim quote from a source item supporting an OpenLoop.
 /// Quotes are verified to actually occur in the source before we store them.
 model OpenLoopEvidence {
-  id         String   @id @default(cuid())
-  loopId     String
-  documentId String
-  /// Verbatim excerpt from the source document.
-  quote      String
+  id           String   @id @default(cuid())
+  loopId       String
+  sourceItemId String
+  /// Verbatim excerpt from the source item.
+  quote        String
   /// Which field this quote supports, e.g. "claim" or "due_date".
-  supports   String   @default("claim")
-  createdAt  DateTime @default(now())
+  supports     String   @default("claim")
+  createdAt    DateTime @default(now())
 
-  loop     OpenLoop       @relation(fields: [loopId], references: [id], onDelete: Cascade)
-  document SourceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  loop       OpenLoop   @relation(fields: [loopId], references: [id], onDelete: Cascade)
+  sourceItem SourceItem @relation(fields: [sourceItemId], references: [id], onDelete: Cascade)
 
-  @@unique([loopId, documentId, quote])
-  @@index([documentId])
+  @@unique([loopId, sourceItemId, quote])
+  @@index([sourceItemId])
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+/// Something Luma could do on the user's behalf — draft a reply, create a
+/// reminder, add a calendar event.
+///
+/// An Action is a *proposal* first. It carries an explicit lifecycle
+/// (proposed -> approved -> executing -> executed) and nothing with an effect
+/// outside Luma may run until `approvedAt` is set by the user. `idempotencyKey`
+/// is unique so a retry or a double-click can never execute the same action
+/// twice.
+///
+/// The table exists now, ahead of the execution engine, because the approval
+/// and audit trail are the parts that must not be retrofitted later.
+model Action {
+  id     String  @id @default(cuid())
+  userId String
+  loopId String?
+
+  /// see ACTION_TYPES in src/server/domain/actions.ts
+  type   String
+  /// proposed | approved | rejected | executing | executed | failed | cancelled
+  status String @default("proposed")
+
+  /// Human-readable description of exactly what will happen, shown at approval.
+  summary String
+  /// JSON payload the executor will act on. Stored verbatim so the user is
+  /// approving the same bytes that get executed.
+  payload String @default("{}")
+
+  /// False only for actions confined to Luma itself. Anything that leaves the
+  /// app must keep this true.
+  requiresApproval Boolean @default(true)
+
+  proposedAt DateTime  @default(now())
+  approvedAt DateTime?
+  rejectedAt DateTime?
+  executedAt DateTime?
+  failedAt   DateTime?
+
+  /// Result payload or provider reference (e.g. a created draft id).
+  result String?
+  error  String?
+  /// Number of execution attempts, for retry accounting.
+  attempts Int @default(0)
+
+  /// Guards against double execution across retries and concurrent requests.
+  idempotencyKey String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loop OpenLoop? @relation(fields: [loopId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([loopId])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+/// A proactive nudge about an Open Loop.
+///
+/// `dedupeKey` is unique per user so the same reminder is never delivered
+/// twice — the failure mode that turns a useful product into noise. Rows are
+/// written in `pending` state and transitioned by the delivery worker, so a
+/// crash mid-send leaves an auditable record rather than a silent gap.
+model Notification {
+  id     String  @id @default(cuid())
+  userId String
+  loopId String?
+
+  /// in_app | email | push
+  channel String @default("in_app")
+  /// pending | sent | failed | suppressed | read
+  status  String @default("pending")
+
+  title String
+  body  String
+
+  /// When this should go out. Null means "as soon as possible".
+  scheduledFor DateTime?
+  sentAt       DateTime?
+  readAt       DateTime?
+  failedAt     DateTime?
+  error        String?
+  attempts     Int       @default(0)
+
+  /// Why this was suppressed, when it was — quiet hours, frequency cap, or the
+  /// loop being resolved before delivery.
+  suppressedReason String?
+
+  /// Stable key: one notification per (user, loop, trigger). Unique so a
+  /// re-run of the notifier cannot double-send.
+  dedupeKey String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loop OpenLoop? @relation(fields: [loopId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, status, scheduledFor])
+  @@index([loopId])
 }
 
 // ---------------------------------------------------------------------------
@@ -204,15 +333,15 @@ model OpenLoopEvidence {
 /// One record per LLM call. Gives us cost, latency, and prompt-version
 /// visibility, and lets us replay what the model actually returned.
 model AiRun {
-  id            String   @id @default(cuid())
+  id            String @id @default(cuid())
   userId        String
   /// Logical stage, e.g. "extract_open_loops".
   stage         String
   model         String
   promptVersion String
   status        String // "ok" | "error" | "invalid_output"
-  /// JSON array of SourceDocument ids that were fed to the model.
-  inputDocumentIds String @default("[]")
+  /// JSON array of SourceItem ids that were fed to the model.
+  inputSourceItemIds String @default("[]")
   inputTokens   Int?
   outputTokens  Int?
   latencyMs     Int?
@@ -228,4 +357,5 @@ model AiRun {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  @@index([userId, stage, createdAt])
 }

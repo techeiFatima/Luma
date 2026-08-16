@@ -25,10 +25,15 @@ function formatAmount(minor: number | null, currency: string | null): string | n
   return value;
 }
 
-export function LoopCard({ loop }: { loop: LoopListItem }) {
+/**
+ * `now` is a prop rather than a `Date.now()` call so the component is pure:
+ * reading the clock during render makes output depend on when React happens to
+ * re-render. The page reads the clock once and passes it down.
+ */
+export function LoopCard({ loop, now }: { loop: LoopListItem; now: Date }) {
   const amount = formatAmount(loop.amountMinor, loop.amountCurrency);
-  const dueLabel = formatRelativeDue(loop.dueAt);
-  const isOverdue = loop.dueAt !== null && loop.dueAt.getTime() < Date.now();
+  const dueLabel = formatRelativeDue(loop.dueAt, now);
+  const isOverdue = loop.dueAt !== null && loop.dueAt.getTime() < now.getTime();
 
   return (
     <li className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)]">

@@ -6,157 +6,263 @@ Luma reads your email and surfaces the small number of unfinished things that
 actually need you — deadlines, forms, renewals, payments, returns, replies you
 owe, promises you made. You never create any of it by hand.
 
-This repository is **phase 1 of the MVP**: Gmail ingestion → AI extraction →
-Open Loop creation → prioritization → dashboard.
-
 ---
 
-## Quick start
+## Setup
+
+Requires **Node.js 22+**. No database server needed — SQLite by default.
 
 ```bash
+git clone <repo> && cd Luma
 npm install
-cp .env.example .env        # add your ANTHROPIC_API_KEY
-npm run db:push             # creates prisma/luma.db
-npm run dev                 # http://localhost:3000
+cp .env.example .env       # works as-is for local development
+npm run db:migrate         # creates prisma/luma.db and applies migrations
+npm run db:seed            # optional: a demo user with sample data
+npm run dev                # http://localhost:3000
 ```
 
-Open the app and click **Try it with a sample inbox**. That runs the real
-pipeline against a built-in set of 14 messages — half genuine obligations, half
-the noise a real inbox is full of. No Google account needed.
-
-To connect a real mailbox, add `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (see
-`.env.example` for the redirect URI) and click **Connect Gmail**.
+Or in one step:
 
 ```bash
-npm test          # 76 tests, no API key or network needed
-npm run typecheck
-npm run build
-npm run demo      # run the pipeline from the CLI and print what it found
+npm run setup && npm run dev
 ```
 
----
+Verify it came up:
 
-## How it works
-
-```
-Gmail ──▶ ingest ──▶ prefilter ──▶ EXTRACT ──▶ verify ──▶ dedupe ──▶ persist ──▶ score ──▶ dashboard
-                     (rules)       (LLM)       (rules)    (rules)               (rules)
+```bash
+curl -s localhost:3000/api/health | jq
 ```
 
-Exactly one stage is a model call. Everything before it decides what is worth
-spending a model on; everything after it decides what the model is allowed to
-turn into application state.
+`.env` is gitignored and no secrets are committed. Development runs with fixed
+dev-only fallbacks for `SESSION_SECRET` and `ENCRYPTION_KEY`; **production
+refuses to start without real ones** (min 32 chars — `openssl rand -base64 32`).
 
-| Stage | Where | What it does |
+### Optional integrations
+
+Neither is required to run the app. Without them the relevant feature reports
+itself unavailable rather than crashing.
+
+| Feature | Variables | Without it |
 |---|---|---|
-| **Ingest** | `src/server/ingest/pipeline.ts` | Stores messages as `SourceDocument`. Idempotent on `(account, externalId)`; unchanged content is skipped entirely. |
-| **Prefilter** | `src/server/ingest/prefilter.ts` | Drops bulk mail before it costs a token. Marketing copy is full of fake urgency ("offer ends Friday"), so excluding it removes a whole class of false positives. |
-| **Extract** | `src/server/ai/` | The only LLM call. Structured outputs constrain the model to a fixed schema; every call is logged to `AiRun`. |
-| **Verify** | `src/server/loops/verify.ts` | Checks every evidence quote against the source. Unsupported claims are discarded. |
-| **Dedupe** | `src/server/loops/dedupe.ts` | Stable hash key plus similarity matching, so the same obligation never appears twice. |
-| **Score** | `src/server/loops/priority.ts` | Deterministic prioritization. The model never decides ordering. |
-
-### Why precision is enforced in code, not in the prompt
-
-The prompt asks the model not to fabricate. `verify.ts` is what makes that true:
-
-- **Every quote is checked against the source.** The model must cite verbatim
-  text; whitespace and smart quotes are normalized (email wraps lines), but
-  paraphrase fails. A loop with no surviving evidence is thrown away.
-- **A due date is only a fact if its quote verifies.** If the model claims a
-  date was stated but the supporting quote isn't in the email, the date is kept
-  but demoted to *estimated* — and the UI labels it that way.
-- **Unparseable dates are dropped, not guessed.** Only `YYYY-MM-DD` and full ISO
-  timestamps are accepted. "Next Friday" becomes no date at all.
-- **Loops the user doesn't own are rejected**, as are low-confidence ones.
-
-Every rejection is counted and returned in the pipeline summary, so a
-degradation in extraction quality is visible rather than silent.
-
-### Facts vs. inference
-
-`OpenLoop` stores them in separate fields, and the detail page renders them
-under separate headings — *"What the source says"* and *"What Luma worked out"* —
-with the model's own note on which is which. A date the source stated is
-labelled *stated in the email*; anything derived is labelled *estimated by Luma*.
-
-### Traceability
-
-Every loop links to the `SourceDocument`s it came from, with the verified quote.
-The detail page shows the sender, date, subject, and exact excerpt behind every
-claim.
+| AI extraction | `ANTHROPIC_API_KEY` | Ingestion and the API work; extraction returns `feature_unavailable` |
+| Gmail | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | "Connect Gmail" is hidden; the sample inbox still works |
 
 ---
 
-## What Luma is allowed to do
+## Commands
 
-- Gmail scope is **read-only** (`gmail.readonly`). It cannot send, reply,
-  delete, or modify mail. The granted scopes are listed verbatim on the
-  settings page.
-- Marking a loop done or dismissed is a **Luma-local** change and never touches
-  the mailbox.
-- **There are no autonomous outbound actions.** Draft-email, create-reminder,
-  and create-calendar-event are deliberately not in this phase; when they land
-  they will each require explicit per-action approval.
-- OAuth tokens are encrypted at rest (AES-256-GCM, `src/lib/crypto.ts`).
-- Message bodies are truncated at ingestion and quoted reply chains stripped, so
-  less content is stored and sent than arrives.
-
----
-
-## Observability
-
-Every model call writes an `AiRun` row: model, prompt version, status, token
-counts, latency, the raw structured output, and how many candidates were
-proposed. The settings page renders the last several runs. `PROMPT_VERSION` in
-`src/server/ai/prompt.ts` is bumped whenever the prompt changes, so a shift in
-quality can be traced to a revision.
-
-The dashboard also shows how the list was built — messages read, filtered as
-bulk, analyzed, loops found. If analysis didn't finish, it says so instead of
-showing an empty list as though nothing were outstanding.
+| Command | What it does |
+|---|---|
+| `npm run dev` | Development server |
+| `npm run build` / `npm start` | Production build and serve |
+| `npm test` | Full test suite (offline — no API key or network) |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint (flat config) |
+| `npm run check` | Typecheck + tests |
+| `npm run db:migrate` | Create/apply migrations (development) |
+| `npm run db:deploy` | Apply existing migrations (CI/production) |
+| `npm run db:reset` | Drop and rebuild the database |
+| `npm run db:seed` | Insert demo data (idempotent) |
+| `npm run db:studio` | Prisma Studio |
 
 ---
 
-## Replaceable parts
+## Architecture
 
-The two components most likely to change are behind interfaces:
+```
+src/
+  config/          typed, schema-validated configuration (the only reader of process.env)
+  lib/             errors, logging, crypto, db client, session, time
+  server/
+    http/          route wrapper: request ids, error translation, response envelope
+    domain/        action & notification vocabularies + state machines
+    providers/     mail providers behind one interface (Gmail, fixtures)
+    ingest/        prefilter + idempotent ingestion
+    ai/            the single LLM call, behind a swappable interface
+    loops/         verification, dedupe, prioritization, persistence
+    pipeline/      orchestration
+  app/             Next.js routes and pages
+prisma/
+  schema.prisma    data model
+  migrations/      versioned SQL
+  seed.ts          demo data
+```
 
-- **`MailProvider`** (`src/server/providers/types.ts`) — Gmail and the fixture
-  inbox implement it. Nothing downstream knows about Gmail's API. Calendar and
-  other providers slot in here.
-- **`LoopExtractor`** (`src/server/ai/extract.ts`) — the model call sits behind
-  this. `tests/pipeline.test.ts` swaps in a stub to test the whole pipeline with
-  known model output, including deliberately wrong output.
+### Configuration
 
-The model id is `LUMA_MODEL` and reasoning depth is `LUMA_EFFORT`; neither
-requires a code change.
+`src/config/schema.ts` declares every environment variable in one Zod schema —
+it is the single place to look up what Luma can be configured with. Nothing
+else in the codebase reads `process.env` directly.
+
+Loading is lazy and memoized. The rules:
+
+- An **invalid** value is fatal in every environment. A malformed `APP_URL` is a
+  bug wherever it happens.
+- A **missing** secret is fatal only in production. Development gets an
+  obviously-fake fallback so `npm run dev` works with no setup.
+
+`describeConfig()` gives a redacted view for logs and diagnostics — secrets are
+reported as present/absent, never by value.
+
+### Errors
+
+`src/lib/errors.ts` defines a typed hierarchy; each error carries its own HTTP
+status and a stable machine-readable code.
+
+| Error | Status | Code |
+|---|---|---|
+| `BadRequestError` | 400 | `bad_request` |
+| `UnauthorizedError` | 401 | `unauthorized` |
+| `ForbiddenError` | 403 | `forbidden` |
+| `NotFoundError` | 404 | `not_found` |
+| `ConflictError` | 409 | `conflict` |
+| `ValidationError` | 422 | `validation_failed` |
+| `RateLimitError` | 429 | `rate_limited` |
+| `UpstreamError` | 502 | `upstream_error` |
+| `ConfigError` | 503 | `feature_unavailable` |
+
+Anything that is *not* an `AppError` is treated as a bug: logged in full,
+returned as a generic 500. An internal message cannot leak by accident.
+
+### API structure
+
+Handlers throw typed errors and return plain data — they never build a response
+or pick a status code:
+
+```ts
+export const POST = route("loops.status", async ({ params, body, requireUserId }) => {
+  const userId = await requireUserId();          // throws UnauthorizedError
+  const { status } = await body(bodySchema);     // throws ValidationError
+  ...
+  return { id, status };                          // wrapped in the envelope
+});
+```
+
+Every JSON response uses one envelope:
+
+```jsonc
+{ "ok": true, "data": { ... } }
+{ "ok": false, "error": { "code": "not_found", "message": "…", "requestId": "…" } }
+```
+
+Every response carries an `x-request-id` header, echoed from the request when
+present, so a user's report ties to a log line.
+
+### Logging
+
+Structured JSON via `logger(scope)`, with `.child({ requestId })` for
+per-request context and `.exception()` for stack traces. Credential-shaped keys
+(`accessToken`, `refresh_token`, `clientSecret`, `apiKey`, …) are **masked
+automatically at any depth** — the logger is the easiest place in a codebase to
+leak a token by accident, so the safe thing is the default rather than a rule
+people have to remember.
+
+### Health check
+
+`GET /api/health` → `200` when healthy, `503` when degraded.
+
+```jsonc
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "env": "development",
+  "uptimeSeconds": 12,
+  "checks": [
+    { "name": "config",     "ok": true },
+    { "name": "database",   "ok": true, "latencyMs": 1 },
+    { "name": "migrations", "ok": true, "detail": "1 applied" }
+  ],
+  "features": { "ai": false, "google": false, "demoMode": true }
+}
+```
+
+It checks migrations, not just connectivity: a database that answers `SELECT 1`
+but has no schema will fail every real request. Unauthenticated, so it carries
+no configuration values, and failure detail is withheld outside development.
+
+---
+
+## Data model
+
+| Model | Purpose |
+|---|---|
+| `User` | Identity. |
+| `ConnectedAccount` | A provider connection with encrypted tokens and the verbatim granted scopes. |
+| `SyncState` | Per-account incremental-sync bookmark. |
+| `SourceItem` | A normalized ingested item (email today; calendar events later, same table). |
+| `OpenLoop` | The product's unit of value. |
+| `OpenLoopEvidence` | Verified verbatim quotes linking a loop to its sources. |
+| `Action` | A *proposal* to do something, with an approval lifecycle and audit trail. |
+| `Notification` | A proactive nudge, with delivery state. |
+| `AiRun` | One row per model call: model, prompt version, tokens, latency, raw output. |
+
+Five constraints carry most of the weight, and each is directly tested:
+
+| Constraint | What it guarantees |
+|---|---|
+| `SourceItem @@unique([accountId, externalId])` | Ingestion cannot duplicate a message |
+| `OpenLoop @@unique([userId, dedupeKey])` | The user is never shown the same loop twice |
+| `Action.idempotencyKey @unique` | An action cannot execute twice |
+| `Notification @@unique([userId, dedupeKey])` | The user is never notified twice about the same thing |
+| `onDelete: Cascade` from `User` | Deleting a user really removes their data |
+
+Deletion behaviour is deliberate rather than uniform: notifications about a
+deleted loop are deleted with it, but **actions survive with `loopId` nulled** —
+an executed action is a record of something that happened and must not vanish.
+
+SQLite has no enums, so status columns are strings backed by the unions in
+`src/server/domain/`. Those modules also hold the state machines (`canTransition`,
+`canExecute`), which is what makes them testable.
+
+### Migrations
+
+Versioned SQL under `prisma/migrations/`, applied with `prisma migrate`. The
+test harness runs `migrate deploy` rather than `db push`, so tests exercise the
+same DDL production will run — a broken migration fails the suite instead of
+shipping.
 
 ---
 
 ## Tests
 
-76 tests, all offline — no API key, no network, no Google account.
+132 tests, all offline — no API key, no network, no Google account.
 
 | File | Covers |
 |---|---|
-| `tests/prefilter.test.ts` | Bulk detection, and that `noreply@` senders with real obligations survive it |
+| `tests/config.test.ts` | Defaults, feature gating, production secret enforcement, redaction |
+| `tests/errors.test.ts` | Status/code mapping, internal-detail containment, log redaction |
+| `tests/schema.test.ts` | Uniqueness, defaults, cascade behaviour, user deletion |
+| `tests/domain.test.ts` | Action/notification state machines, approval gate, dedupe keys |
+| `tests/pipeline.test.ts` | End-to-end against a real migrated database, model stubbed |
+| `tests/prefilter.test.ts` | Bulk detection, and `noreply@` obligations surviving it |
 | `tests/verify.test.ts` | Quote matching, fabricated-evidence rejection, due-date demotion |
 | `tests/priority.test.ts` | Scoring, bucketing, ordering |
 | `tests/dedupe.test.ts` | Stemming, dedupe keys, similarity, in-batch collapsing |
-| `tests/batching.test.ts` | Thread packing and the limits that bound it |
+| `tests/batching.test.ts` | Thread packing and its limits |
 | `tests/parse.test.ts` | MIME/HTML parsing, quoted-reply stripping, schema validation |
-| `tests/pipeline.test.ts` | End-to-end against a real database with a stubbed model |
+
+`tests/helpers/db.ts` gives each test file its own migrated SQLite database.
 
 ---
 
-## Roadmap
+## Security posture
 
-Phase 1 (this repo) is complete and working. See [docs/ROADMAP.md](docs/ROADMAP.md)
-for phases 2–4 (Calendar, notifications, approved actions) and how the current
-design accommodates each.
+- Gmail scope is **read-only**. Luma cannot send, reply, delete, or modify mail.
+  Granted scopes are stored verbatim and shown on the settings page.
+- Provider tokens are encrypted at rest (AES-256-GCM).
+- Session cookie is HMAC-signed, `httpOnly`, `sameSite=lax`, and holds only a
+  user id.
+- OAuth `state` is verified against a short-lived cookie.
+- **No autonomous outbound actions.** `Action.canExecute()` requires an
+  `approvedAt` timestamp for anything with an effect outside Luma — even if the
+  `requiresApproval` flag says otherwise, so a bug that flips the flag cannot
+  become a bug that sends email.
+- The demo route signs a user in without OAuth, so it is disabled in production
+  unless `ENABLE_DEMO_MODE` is explicitly set.
+
+---
 
 ## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — data model, pipeline stages, design decisions
-- [docs/ROADMAP.md](docs/ROADMAP.md) — what comes next and why the seams are where they are
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — pipeline stages and design decisions
+- [docs/ROADMAP.md](docs/ROADMAP.md) — what comes next

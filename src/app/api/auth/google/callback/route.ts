@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { encryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
-import { env } from "@/lib/env";
+import { getConfig } from "@/config";
 import { logger } from "@/lib/logger";
 import { setSessionCookie } from "@/lib/session";
 import { exchangeCodeForTokens } from "@/server/providers/gmail/oauth";
@@ -17,14 +17,14 @@ export async function GET(request: NextRequest) {
   const oauthError = url.searchParams.get("error");
 
   if (oauthError) {
-    return NextResponse.redirect(`${env.appUrl}/?error=${encodeURIComponent(oauthError)}`);
+    return NextResponse.redirect(`${getConfig().appUrl}/?error=${encodeURIComponent(oauthError)}`);
   }
 
   const store = await cookies();
   const expectedState = store.get(OAUTH_STATE_COOKIE)?.value;
   if (!code || !state || !expectedState || state !== expectedState) {
     log.warn("rejected callback with bad state");
-    return NextResponse.redirect(`${env.appUrl}/?error=invalid_oauth_state`);
+    return NextResponse.redirect(`${getConfig().appUrl}/?error=invalid_oauth_state`);
   }
   store.delete(OAUTH_STATE_COOKIE);
 
@@ -66,9 +66,9 @@ export async function GET(request: NextRequest) {
 
     await setSessionCookie(user.id);
     log.info("connected gmail account", { userId: user.id });
-    return NextResponse.redirect(`${env.appUrl}/`);
+    return NextResponse.redirect(`${getConfig().appUrl}/`);
   } catch (error) {
     log.error("oauth callback failed", { error: String(error) });
-    return NextResponse.redirect(`${env.appUrl}/?error=oauth_failed`);
+    return NextResponse.redirect(`${getConfig().appUrl}/?error=oauth_failed`);
   }
 }

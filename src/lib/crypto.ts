@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
-import { requireEncryptionKey, requireSessionSecret } from "./env";
+import { getConfig } from "@/config";
 
 const ALGORITHM = "aes-256-gcm";
 
 function derivedKey(): Buffer {
   // The configured key is arbitrary-length text; hash it to a fixed 32 bytes.
-  return crypto.createHash("sha256").update(requireEncryptionKey()).digest();
+  return crypto.createHash("sha256").update(getConfig().encryptionKey).digest();
 }
 
 /**
@@ -45,7 +45,7 @@ export function decryptSecret(payload: string): string {
 
 /** HMAC used to sign the session cookie. */
 export function sign(value: string): string {
-  return crypto.createHmac("sha256", requireSessionSecret()).update(value).digest("base64url");
+  return crypto.createHmac("sha256", getConfig().sessionSecret).update(value).digest("base64url");
 }
 
 export function verifySignature(value: string, signature: string): boolean {

@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { sign, verifySignature } from "./crypto";
-import { isProduction } from "./env";
+import { getConfig } from "@/config";
 
 const COOKIE_NAME = "luma_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
@@ -33,7 +33,7 @@ export async function setSessionCookie(userId: string): Promise<void> {
   store.set(COOKIE_NAME, encodeSession(userId), {
     httpOnly: true,
     sameSite: "lax",
-    secure: isProduction,
+    secure: getConfig().isProduction,
     path: "/",
     maxAge: MAX_AGE_SECONDS,
   });

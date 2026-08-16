@@ -25,7 +25,7 @@ export function LoopActions({ loopId, status }: { loopId: string; status: string
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        setError(body?.error ?? "Could not update");
+        setError(body?.error?.message ?? "Could not update");
         return;
       }
       router.refresh();

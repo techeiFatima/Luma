@@ -26,7 +26,7 @@ function loop(overrides: Partial<VerifiedLoop> = {}): VerifiedLoop {
     amountMinor: 18000,
     amountCurrency: "USD",
     inferenceNotes: null,
-    evidence: [{ documentId: "doc-1", quote: "complete the online renewal form", supports: "claim" }],
+    evidence: [{ sourceItemId: "doc-1", quote: "complete the online renewal form", supports: "claim" }],
     ...overrides,
   };
 }
@@ -155,15 +155,15 @@ describe("dedupeWithinBatch", () => {
     const result = dedupeWithinBatch([
       loop({
         confidence: 0.95,
-        evidence: [{ documentId: "doc-1", quote: "renewal form", supports: "claim" }],
+        evidence: [{ sourceItemId: "doc-1", quote: "renewal form", supports: "claim" }],
       }),
       loop({
         confidence: 0.7,
-        evidence: [{ documentId: "doc-2", quote: "reminder about renewal", supports: "claim" }],
+        evidence: [{ sourceItemId: "doc-2", quote: "reminder about renewal", supports: "claim" }],
       }),
     ]);
     expect(result).toHaveLength(1);
-    expect(result[0]!.evidence.map((item) => item.documentId).sort()).toEqual(["doc-1", "doc-2"]);
+    expect(result[0]!.evidence.map((item) => item.sourceItemId).sort()).toEqual(["doc-1", "doc-2"]);
   });
 
   it("keeps genuinely different loops apart", () => {

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { env } from "@/lib/env";
+import { getConfig } from "@/config";
 import { clearSessionCookie } from "@/lib/session";
 
 export async function POST() {
   await clearSessionCookie();
-  return NextResponse.redirect(`${env.appUrl}/`, { status: 303 });
+  return NextResponse.redirect(`${getConfig().appUrl}/`, { status: 303 });
 }

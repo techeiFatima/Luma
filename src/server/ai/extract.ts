@@ -7,14 +7,14 @@ import { extractionJsonSchema, extractionResultSchema, type CandidateLoop } from
 const log = logger("ai.extract");
 
 export interface ExtractionDocument extends PromptMessage {
-  /** SourceDocument.id — the same value the model cites as `source_id`. */
+  /** SourceItem.id — the same value the model cites as `source_id`. */
   sourceId: string;
   threadKey: string;
 }
 
 export interface ExtractionBatchResult {
-  /** Documents that went into this batch, by SourceDocument id. */
-  documentIds: string[];
+  /** Documents that went into this batch, by SourceItem id. */
+  sourceItemIds: string[];
   candidates: CandidateLoop[];
   /** Set when the batch produced nothing usable. */
   failure: string | null;
@@ -127,12 +127,12 @@ export class AnthropicLoopExtractor implements LoopExtractor {
     batch: ExtractionDocument[],
     now: Date,
   ): Promise<ExtractionBatchResult> {
-    const documentIds = batch.map((document) => document.sourceId);
+    const sourceItemIds = batch.map((document) => document.sourceId);
     const baseRun = {
       userId,
       stage: "extract_open_loops",
       promptVersion: PROMPT_VERSION,
-      inputDocumentIds: JSON.stringify(documentIds),
+      inputSourceItemIds: JSON.stringify(sourceItemIds),
     };
 
     try {
@@ -157,8 +157,8 @@ export class AnthropicLoopExtractor implements LoopExtractor {
             latencyMs: result.latencyMs,
           },
         });
-        log.warn("batch produced no output", { reason, documentIds });
-        return { documentIds, candidates: [], failure: reason };
+        log.warn("batch produced no output", { reason, sourceItemIds });
+        return { sourceItemIds, candidates: [], failure: reason };
       }
 
       const parsed = extractionResultSchema.safeParse(JSON.parse(result.text));
@@ -175,8 +175,8 @@ export class AnthropicLoopExtractor implements LoopExtractor {
             latencyMs: result.latencyMs,
           },
         });
-        log.warn("output failed validation", { documentIds });
-        return { documentIds, candidates: [], failure: "output failed schema validation" };
+        log.warn("output failed validation", { sourceItemIds });
+        return { sourceItemIds, candidates: [], failure: "output failed schema validation" };
       }
 
       await prisma.aiRun.create({
@@ -192,14 +192,14 @@ export class AnthropicLoopExtractor implements LoopExtractor {
         },
       });
 
-      return { documentIds, candidates: parsed.data.loops, failure: null };
+      return { sourceItemIds, candidates: parsed.data.loops, failure: null };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await prisma.aiRun.create({
         data: { ...baseRun, model: "unknown", status: "error", error: message.slice(0, 2000) },
       });
-      log.error("extraction call failed", { documentIds, error: message });
-      return { documentIds, candidates: [], failure: message };
+      log.error("extraction call failed", { sourceItemIds, error: message });
+      return { sourceItemIds, candidates: [], failure: message };
     }
   }
 }

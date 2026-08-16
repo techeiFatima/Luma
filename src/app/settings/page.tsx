@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { env } from "@/lib/env";
+import { getConfig } from "@/config";
 import { getSessionUserId } from "@/lib/session";
 import { formatSentAt } from "@/lib/time";
 
@@ -115,7 +115,7 @@ export default async function SettingsPage() {
       <section className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
         <h2 className="text-sm font-semibold">Model</h2>
         <p className="mt-2 text-sm text-[var(--color-muted)]">
-          Extraction runs on <span className="font-mono">{env.anthropicModel}</span>. Luma only ever
+          Extraction runs on <span className="font-mono">{getConfig().ai.model}</span>. Luma only ever
           asks it to read and structure what is already in your mail — ordering, deduplication, and
           every decision about what to show you are computed by Luma itself.
         </p>

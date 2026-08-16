@@ -20,7 +20,7 @@ export function SyncButton({ label = "Check my inbox" }: { label?: string }) {
       const response = await fetch("/api/sync", { method: "POST" });
       const body = await response.json();
       if (!response.ok) {
-        setError(body?.error ?? "Sync failed");
+        setError(body?.error?.message ?? "Sync failed");
         return;
       }
       startTransition(() => router.refresh());

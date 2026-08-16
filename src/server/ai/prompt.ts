@@ -79,7 +79,7 @@ export interface PromptMessage {
  * Renders messages for the model.
  *
  * The `[source_id]` markers are what make evidence traceable: the model cites
- * them, and we resolve them back to SourceDocument rows on the way out.
+ * them, and we resolve them back to SourceItem rows on the way out.
  */
 export function buildUserPrompt(messages: PromptMessage[], now: Date): string {
   const header = [

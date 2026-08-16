@@ -161,11 +161,11 @@ async function attachEvidence(loopId: string, loop: VerifiedLoop): Promise<void>
     // The unique constraint makes this idempotent across repeated syncs.
     await prisma.openLoopEvidence.upsert({
       where: {
-        loopId_documentId_quote: { loopId, documentId: item.documentId, quote: item.quote },
+        loopId_sourceItemId_quote: { loopId, sourceItemId: item.sourceItemId, quote: item.quote },
       },
       create: {
         loopId,
-        documentId: item.documentId,
+        sourceItemId: item.sourceItemId,
         quote: item.quote,
         supports: item.supports,
       },

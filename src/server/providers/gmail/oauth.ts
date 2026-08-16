@@ -1,6 +1,6 @@
 import { google } from "googleapis";
 import type { OAuth2Client } from "google-auth-library";
-import { googleScopes, requireGoogleOAuth } from "@/lib/env";
+import { GOOGLE_SCOPES, requireGoogleOAuth } from "@/config";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
@@ -21,7 +21,7 @@ export function buildConsentUrl(state: string): string {
     access_type: "offline",
     prompt: "consent",
     include_granted_scopes: false,
-    scope: [...googleScopes.gmail],
+    scope: [...GOOGLE_SCOPES],
     state,
   });
 }
@@ -42,7 +42,7 @@ export async function exchangeCodeForTokens(code: string) {
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token ?? null,
     expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
-    scopes: tokens.scope ?? googleScopes.gmail.join(" "),
+    scopes: tokens.scope ?? GOOGLE_SCOPES.join(" "),
   };
 }
 

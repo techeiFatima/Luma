@@ -2,19 +2,25 @@
   "name": "luma",
   "version": "0.1.0",
   "private": true,
-  "description": "Luma — surfaces the Open Loops you are likely to forget, from your inbox.",
+  "description": "Luma \u2014 surfaces the Open Loops you are likely to forget, from your inbox.",
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate --schema=prisma/schema.prisma && next build",
     "start": "next start",
-    "lint": "next lint",
+    "setup": "npm install && npm run db:migrate && npm run db:seed",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "check": "npm run typecheck && npm run test",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "prisma generate --schema=prisma/schema.prisma",
-    "db:push": "prisma db push --schema=prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
+    "db:deploy": "prisma migrate deploy --schema=prisma/schema.prisma",
+    "db:reset": "prisma migrate reset --schema=prisma/schema.prisma --force",
+    "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio --schema=prisma/schema.prisma",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsx scripts/demo.ts",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
@@ -32,10 +38,13 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.1",
     "prisma": "^7.9.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.12",
     "typescript": "^5.9.0",
+    "typescript-eslint": "^8.67.0",
     "vitest": "^4.1.10"
   }
 }

@@ -21,7 +21,7 @@ export interface PipelineOptions {
 
 export interface PipelineSummary {
   ingest: IngestSummary;
-  documentsExtracted: number;
+  sourceItemsExtracted: number;
   candidatesProposed: number;
   candidatesAccepted: number;
   rejections: Record<RejectionReason, number>;
@@ -59,7 +59,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineSum
   });
 
   // Only unprocessed, non-bulk documents reach the model.
-  const pending = await prisma.sourceDocument.findMany({
+  const pending = await prisma.sourceItem.findMany({
     where: { userId: options.userId, accountId: options.accountId, isBulk: false, processedAt: null },
     orderBy: { sentAt: "desc" },
     take: 200,
@@ -67,7 +67,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineSum
 
   const summary: PipelineSummary = {
     ingest,
-    documentsExtracted: pending.length,
+    sourceItemsExtracted: pending.length,
     candidatesProposed: 0,
     candidatesAccepted: 0,
     rejections: EMPTY_REJECTIONS(),
@@ -123,8 +123,8 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineSum
     // loops here" is a real answer and re-running it would just cost money.
     // A failed batch is left unprocessed so the next sync retries it.
     if (!batch.failure) {
-      await prisma.sourceDocument.updateMany({
-        where: { id: { in: batch.documentIds } },
+      await prisma.sourceItem.updateMany({
+        where: { id: { in: batch.sourceItemIds } },
         data: { processedAt: now },
       });
     }

@@ -165,10 +165,10 @@ export function dedupeWithinBatch(loops: VerifiedLoop[]): VerifiedLoop[] {
     if (!existing) continue;
     const winner = loop.confidence > existing.confidence ? loop : existing;
     const loser = winner === loop ? existing : loop;
-    const seen = new Set(winner.evidence.map((item) => `${item.documentId}::${item.quote}`));
+    const seen = new Set(winner.evidence.map((item) => `${item.sourceItemId}::${item.quote}`));
     const merged = [...winner.evidence];
     for (const item of loser.evidence) {
-      const key = `${item.documentId}::${item.quote}`;
+      const key = `${item.sourceItemId}::${item.quote}`;
       if (!seen.has(key)) {
         seen.add(key);
         merged.push(item);

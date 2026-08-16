@@ -30,7 +30,7 @@ export interface SourceText {
 }
 
 export interface VerifiedEvidence {
-  documentId: string;
+  sourceItemId: string;
   quote: string;
   supports: "claim" | "due_date";
 }
@@ -111,7 +111,7 @@ export function verifyCandidate(
       notes.push(`evidence quote not found in ${item.source_id}`);
       continue;
     }
-    evidence.push({ documentId: source.id, quote: item.quote.trim(), supports: "claim" });
+    evidence.push({ sourceItemId: source.id, quote: item.quote.trim(), supports: "claim" });
   }
 
   if (evidence.length === 0) {
@@ -119,7 +119,7 @@ export function verifyCandidate(
   }
 
   // --- Due date -----------------------------------------------------------
-  let dueAt = parseModelDate(candidate.due_date);
+  const dueAt = parseModelDate(candidate.due_date);
   let dueAtBasis = candidate.due_date_basis;
   let dueAtEvidence: string | null = null;
 
@@ -135,7 +135,7 @@ export function verifyCandidate(
       dueAtEvidence = quote.trim();
       const sourceForQuote = [...sources.values()].find((source) => quoteAppearsIn(quote, source));
       if (sourceForQuote) {
-        evidence.push({ documentId: sourceForQuote.id, quote: quote.trim(), supports: "due_date" });
+        evidence.push({ sourceItemId: sourceForQuote.id, quote: quote.trim(), supports: "due_date" });
       }
     } else {
       // Keep the date, but stop calling it a fact.

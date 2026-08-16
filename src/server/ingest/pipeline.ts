@@ -24,7 +24,7 @@ export interface IngestSummary {
 }
 
 /**
- * Pulls messages from a provider and stores them as SourceDocuments.
+ * Pulls messages from a provider and stores them as SourceItems.
  *
  * Idempotent by construction: `(accountId, externalId)` is unique, and a
  * document whose contentHash is unchanged is left completely alone — including
@@ -59,7 +59,7 @@ export async function ingestMessages(options: IngestOptions): Promise<IngestSumm
       message.sentAt.toISOString(),
     );
 
-    const existing = await prisma.sourceDocument.findUnique({
+    const existing = await prisma.sourceItem.findUnique({
       where: { accountId_externalId: { accountId, externalId: message.externalId } },
       select: { id: true, contentHash: true },
     });
@@ -90,10 +90,10 @@ export async function ingestMessages(options: IngestOptions): Promise<IngestSumm
     };
 
     if (existing) {
-      await prisma.sourceDocument.update({ where: { id: existing.id }, data });
+      await prisma.sourceItem.update({ where: { id: existing.id }, data });
       summary.updated += 1;
     } else {
-      await prisma.sourceDocument.create({ data });
+      await prisma.sourceItem.create({ data });
       summary.created += 1;
     }
   }

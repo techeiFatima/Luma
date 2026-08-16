@@ -119,11 +119,11 @@ export default async function LoopDetailPage({
           >
             <div className="flex flex-wrap items-baseline gap-x-2 text-xs text-[var(--color-muted)]">
               <span className="font-medium text-[var(--color-ink)]">
-                {item.document.fromName ?? item.document.fromEmail ?? "Unknown sender"}
+                {item.sourceItem.fromName ?? item.sourceItem.fromEmail ?? "Unknown sender"}
               </span>
-              <span>{formatSentAt(item.document.sentAt)}</span>
+              <span>{formatSentAt(item.sourceItem.sentAt)}</span>
             </div>
-            <p className="mt-1 text-sm font-medium">{item.document.subject ?? "(no subject)"}</p>
+            <p className="mt-1 text-sm font-medium">{item.sourceItem.subject ?? "(no subject)"}</p>
             <blockquote className="mt-2 border-l-2 border-[var(--color-line)] pl-3 text-sm italic text-[var(--color-muted)]">
               {item.quote}
             </blockquote>
