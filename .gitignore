@@ -1,0 +1,29 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Local env & secrets — never commit
+.env
+.env.local
+.env*.local
+
+# Local database
+*.db
+*.db-journal
+prisma/*.db
+prisma/*.db-journal
+
+# Generated Prisma client
+src/generated/
+
+# Logs / OS
+*.log
+npm-debug.log*
+.DS_Store
+
+# Test / tooling caches
+coverage/
+.vitest/
+*.tsbuildinfo

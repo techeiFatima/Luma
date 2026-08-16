@@ -1,0 +1,231 @@
+// Luma data model.
+//
+// Design notes that matter for the product principles:
+//  * Every OpenLoop is traceable to the source documents it came from
+//    (OpenLoopEvidence holds verbatim quotes that we verify against the source).
+//  * Facts and inference are stored in separate fields. `dueAtBasis` records
+//    whether a date was stated in the source or inferred by the model.
+//  * Ingestion is idempotent: @@unique([accountId, externalId]).
+//  * Duplicate loops are prevented by @@unique([userId, dedupeKey]).
+//  * Every LLM call is recorded in AiRun so the pipeline is observable.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------------------
+// Identity & connected providers
+// ---------------------------------------------------------------------------
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts  ConnectedAccount[]
+  documents SourceDocument[]
+  loops     OpenLoop[]
+  aiRuns    AiRun[]
+}
+
+/// A provider connection the user has explicitly granted.
+/// Tokens are encrypted at rest (see src/lib/crypto.ts).
+model ConnectedAccount {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String // "gmail" | "google_calendar"
+  providerAccountId String // e.g. the Google account email
+  accessToken       String // encrypted
+  refreshToken      String? // encrypted
+  expiresAt         DateTime?
+  /// Exact OAuth scopes the user granted. Kept verbatim so permissions stay explicit.
+  scopes            String
+  grantedAt         DateTime @default(now())
+  revokedAt         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syncState SyncState?
+  documents SourceDocument[]
+
+  @@unique([userId, provider, providerAccountId])
+  @@index([userId])
+}
+
+/// Incremental-sync bookmark for a connected account.
+model SyncState {
+  id              String    @id @default(cuid())
+  accountId       String    @unique
+  /// Provider cursor (Gmail historyId). Null means "no incremental sync yet".
+  cursor          String?
+  lastSyncedAt    DateTime?
+  lastFullSyncAt  DateTime?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  account ConnectedAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Ingested source material
+// ---------------------------------------------------------------------------
+
+/// A normalized item pulled from a provider. Today that is always an email;
+/// calendar events will use the same table with kind = "calendar_event".
+model SourceDocument {
+  id               String   @id @default(cuid())
+  userId           String
+  accountId        String
+  provider         String // "gmail"
+  kind             String // "email"
+  /// Provider-native id. Combined with accountId this makes ingestion idempotent.
+  externalId       String
+  threadExternalId String?
+
+  subject   String?
+  fromName  String?
+  fromEmail String?
+  /// JSON array of recipient addresses.
+  toEmails  String   @default("[]")
+  sentAt    DateTime
+  snippet   String?
+  /// Plain-text body, truncated at ingestion time.
+  bodyText  String
+
+  /// True when the deterministic prefilter judged this to be bulk/marketing mail.
+  isBulk    Boolean @default(false)
+  /// Set once the extraction stage has processed this document.
+  processedAt DateTime?
+  /// Hash of the normalized content; lets us skip re-extraction when nothing changed.
+  contentHash String
+
+  createdAt DateTime @default(now())
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account  ConnectedAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  evidence OpenLoopEvidence[]
+
+  @@unique([accountId, externalId])
+  @@index([userId, sentAt])
+  @@index([userId, processedAt])
+  @@index([threadExternalId])
+}
+
+// ---------------------------------------------------------------------------
+// Open Loops
+// ---------------------------------------------------------------------------
+
+model OpenLoop {
+  id     String @id @default(cuid())
+  userId String
+
+  /// Short, human-readable label. Written by the model, grounded in evidence.
+  title    String
+  /// One or two sentences describing what is unfinished.
+  summary  String
+  category String // see src/server/loops/taxonomy.ts
+  status   String @default("open") // open | done | dismissed | snoozed
+
+  // --- Facts (must be supported by evidence) -------------------------------
+  dueAt         DateTime?
+  /// "explicit" = a date was stated in the source. "inferred" = the model
+  /// derived it. "none" = no date. We never present an inferred date as a fact.
+  dueAtBasis    String    @default("none")
+  /// Verbatim quote from the source that supports dueAt (required when explicit).
+  dueAtEvidence String?
+
+  counterpartyName  String?
+  counterpartyEmail String?
+
+  /// Money amount in minor units, when the loop involves one.
+  amountMinor    Int?
+  amountCurrency String?
+
+  // --- Inference (clearly separated from facts) ----------------------------
+  /// 0..1 model confidence that this is a real, actionable open loop.
+  confidence     Float
+  /// "high" | "medium" | "low" — model's read on the cost of missing this.
+  consequence    String
+  /// The model's own note on what it inferred vs. what the source stated.
+  inferenceNotes String?
+
+  // --- Deterministic prioritization (computed in code, never by the model) --
+  priorityScore  Int    @default(0)
+  priorityBucket String @default("later") // now | soon | later
+
+  /// Stable key used to prevent duplicate loops across syncs.
+  dedupeKey String
+
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  resolvedAt  DateTime?
+  snoozedUntil DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  evidence OpenLoopEvidence[]
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, status, priorityScore])
+}
+
+/// A verbatim quote from a source document supporting an OpenLoop.
+/// Quotes are verified to actually occur in the source before we store them.
+model OpenLoopEvidence {
+  id         String   @id @default(cuid())
+  loopId     String
+  documentId String
+  /// Verbatim excerpt from the source document.
+  quote      String
+  /// Which field this quote supports, e.g. "claim" or "due_date".
+  supports   String   @default("claim")
+  createdAt  DateTime @default(now())
+
+  loop     OpenLoop       @relation(fields: [loopId], references: [id], onDelete: Cascade)
+  document SourceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([loopId, documentId, quote])
+  @@index([documentId])
+}
+
+// ---------------------------------------------------------------------------
+// AI observability
+// ---------------------------------------------------------------------------
+
+/// One record per LLM call. Gives us cost, latency, and prompt-version
+/// visibility, and lets us replay what the model actually returned.
+model AiRun {
+  id            String   @id @default(cuid())
+  userId        String
+  /// Logical stage, e.g. "extract_open_loops".
+  stage         String
+  model         String
+  promptVersion String
+  status        String // "ok" | "error" | "invalid_output"
+  /// JSON array of SourceDocument ids that were fed to the model.
+  inputDocumentIds String @default("[]")
+  inputTokens   Int?
+  outputTokens  Int?
+  latencyMs     Int?
+  /// Raw structured output, kept verbatim for debugging and replay.
+  rawOutput     String?
+  error         String?
+  /// Counts of what the deterministic guards did with the model's proposals.
+  candidatesProposed Int @default(0)
+  candidatesAccepted Int @default(0)
+  candidatesRejected Int @default(0)
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
