@@ -37,18 +37,28 @@ afterAll(async () => {
 
 describe("consent URL", () => {
   it("asks only for read access and an account label", async () => {
-    // Anything beyond this would let Luma modify mail, which it never does.
     expect([...GOOGLE_SCOPES]).toEqual([
       "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/calendar.readonly",
       "https://www.googleapis.com/auth/userinfo.email",
       "openid",
     ]);
 
     const url = new URL(buildConsentUrl("state-123"));
-    const requested = (url.searchParams.get("scope") ?? "").split(" ");
-    expect(requested).toEqual([...GOOGLE_SCOPES]);
-    expect(requested.some((scope) => /\.modify|\.send|\.compose|mail\.google\.com/.test(scope))).toBe(
-      false,
+    expect((url.searchParams.get("scope") ?? "").split(" ")).toEqual([...GOOGLE_SCOPES]);
+  });
+
+  it("never requests the ability to change anything", () => {
+    // The real invariant, stated independently of the list above so that
+    // adding a scope cannot quietly add write access along with it. Luma
+    // reads; every outward action is a separate approved step.
+    const forbidden =
+      /\.modify|\.send|\.compose|\.insert|mail\.google\.com|calendar\/v3|auth\/calendar$|\.events\b/;
+    for (const scope of GOOGLE_SCOPES) {
+      expect(forbidden.test(scope), `${scope} grants write access`).toBe(false);
+    }
+    expect(GOOGLE_SCOPES.every((s) => s === "openid" || s.endsWith(".readonly") || s.endsWith("userinfo.email"))).toBe(
+      true,
     );
   });
 

@@ -4,13 +4,13 @@ import { CATEGORY_LABELS, LOOP_CATEGORIES } from "../loops/taxonomy";
  * Bump this whenever the prompt text changes. It is recorded on every AiRun so
  * a shift in extraction quality can be traced back to a specific revision.
  */
-export const PROMPT_VERSION = "extract-open-loops/v1";
+export const PROMPT_VERSION = "extract-open-loops/v2";
 
 const categoryList = LOOP_CATEGORIES.map(
   (category) => `  - ${category}: ${CATEGORY_LABELS[category]}`,
 ).join("\n");
 
-export const SYSTEM_PROMPT = `You extract "Open Loops" from a person's email: unfinished, upcoming, or unresolved obligations that may still need their attention.
+export const SYSTEM_PROMPT = `You extract "Open Loops" from a person's email and calendar: unfinished, upcoming, or unresolved obligations that may still need their attention.
 
 You are one stage of a pipeline, not a chat assistant. Your entire output is the structured result; no one reads prose from you.
 
@@ -60,6 +60,16 @@ Return an empty array when a set of messages contains nothing real. That is a co
 - medium: rework, inconvenience, or a missed opportunity that can be recovered.
 - low: minor or easily reversible.
 
+## Calendar events
+
+Some documents are calendar events rather than email. They are marked \`Type: calendar event\` and their body begins with \`Event:\`.
+
+A calendar entry is **not** an Open Loop on its own. Having a meeting is not something a person is forgetting — they already wrote it down, which is the opposite of forgetting. Emit a loop from an event only when the event implies unfinished *preparation*, and the source says so: documents to bring, a form to complete beforehand, something to prepare or send ahead of it.
+
+Their main value is context for the mail around them. An email saying "bring the signed form to your appointment" becomes actionable once an event tells you when that appointment is — cite both, and use the event's date for \`due_date\` with basis "explicit" only when the event itself is the deadline.
+
+If mail and calendar describe the same obligation, that is one loop citing both, never two.
+
 ## Handling a batch
 
 A batch usually contains several unrelated conversations. Treat them independently — do not merge two different situations into one loop just because they arrived together.
@@ -68,6 +78,8 @@ Within a single conversation the opposite applies: messages from one thread desc
 
 export interface PromptMessage {
   sourceId: string;
+  /** "email" or "calendar_event" — changes how the model should read it. */
+  kind?: string;
   subject: string | null;
   fromName: string | null;
   fromEmail: string | null;
@@ -85,8 +97,8 @@ export function buildUserPrompt(messages: PromptMessage[], now: Date): string {
   const header = [
     `Today's date is ${now.toISOString().slice(0, 10)}.`,
     "",
-    "Extract the Open Loops from the messages below. They may come from several",
-    "unrelated conversations.",
+    "Extract the Open Loops from the documents below. They may come from several",
+    "unrelated conversations, and some may be calendar events rather than email.",
     "",
   ].join("\n");
 
@@ -95,6 +107,7 @@ export function buildUserPrompt(messages: PromptMessage[], now: Date): string {
       const from = [message.fromName, message.fromEmail].filter(Boolean).join(" ");
       return [
         `[source_id: ${message.sourceId}]`,
+        ...(message.kind === "calendar_event" ? ["Type: calendar event"] : []),
         `From: ${from || "unknown"}`,
         `Date: ${message.sentAt.toISOString().slice(0, 10)}`,
         `Subject: ${message.subject ?? "(no subject)"}`,

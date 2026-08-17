@@ -22,7 +22,8 @@
     "demo": "tsx scripts/demo.ts",
     "lint:fix": "eslint . --fix",
     "eval": "tsx evals/run.ts",
-    "eval:dry": "EVAL_DRY_RUN=1 tsx evals/run.ts"
+    "eval:dry": "EVAL_DRY_RUN=1 tsx evals/run.ts",
+    "postinstall": "prisma generate --schema=prisma/schema.prisma"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",

@@ -49,8 +49,17 @@ export interface AppConfig {
   readonly demoMode: boolean;
 }
 
+/**
+ * Every scope is read-only, and that is a product decision as much as a
+ * security one. Luma's promise is that it notices things — nothing it does
+ * requires the ability to change the user's mail or calendar, so asking for
+ * that ability would be borrowing trust it has no use for. Writing anything
+ * (a calendar event, a draft) is a separate, explicitly approved action and
+ * would need its own incremental consent.
+ */
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
   "openid",
 ] as const;

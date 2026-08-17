@@ -1,15 +1,55 @@
 @import "tailwindcss";
 
+/*
+ * A calm surface for uncomfortable information.
+ *
+ * Luma tells people about things they have been avoiding, so the palette
+ * deliberately avoids the vocabulary of productivity software: no red badges,
+ * no progress bars, no saturated blue. Warm paper, a deep green for anything
+ * the user initiates, and urgency carried by a single small dot rather than by
+ * shouting at them. The intent is that opening Luma when you are behind feels
+ * survivable.
+ */
+
 @theme {
   --color-ink: #14161a;
+  --color-ink-soft: #3d4148;
   --color-muted: #6b7280;
   --color-surface: #ffffff;
-  --color-canvas: #f7f7f5;
-  --color-line: #e6e6e1;
+  --color-canvas: #faf9f6;
+  --color-line: #e8e6df;
+  --color-line-soft: #f0eee8;
   --color-accent: #2f5d50;
+  --color-accent-soft: #eef3f0;
   --color-now: #b4451f;
   --color-soon: #a67318;
   --color-later: #5b6470;
+
+  --font-display: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+}
+
+/*
+ * Dark mode overrides the variables directly rather than declaring a second
+ * `@theme`. A `@theme` block nested in a media query is not scoped the way it
+ * reads: Tailwind hoists the tokens, so the dark palette ends up applying in
+ * both schemes. Overriding on `:root` keeps the cascade doing what it looks
+ * like it does.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-ink: #f2f1ed;
+    --color-ink-soft: #c8c6c0;
+    --color-muted: #8f9096;
+    --color-surface: #1a1c20;
+    --color-canvas: #131417;
+    --color-line: #2a2d33;
+    --color-line-soft: #23262b;
+    --color-accent: #7fb3a1;
+    --color-accent-soft: #1e2a26;
+    --color-now: #e8845c;
+    --color-soon: #d4a545;
+    --color-later: #9aa0a8;
+  }
 }
 
 html,
@@ -17,9 +57,51 @@ body {
   background-color: var(--color-canvas);
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   font-family:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-feature-settings: "kern", "liga";
+}
+
+/* The headline answer. Serif because it is a sentence, not a label. */
+.answer {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+/* Cards lift very slightly, so the list reads as objects rather than rows. */
+.card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 0.875rem;
+  box-shadow: 0 1px 2px rgb(20 22 26 / 0.03);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+a.card:hover,
+.card-interactive:hover {
+  border-color: color-mix(in srgb, var(--color-accent) 35%, var(--color-line));
+  box-shadow: 0 4px 16px rgb(20 22 26 / 0.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .card-interactive {
+    transition: none;
+  }
+}
+
+/* Focus that is visible without being loud. */
+:where(a, button, input, textarea, select):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 0.375rem;
 }

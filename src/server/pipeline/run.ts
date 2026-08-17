@@ -1,8 +1,11 @@
 import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
+import { runNotifier } from "../domain/notify";
+import { proposeForUser } from "../domain/propose";
 import { AnthropicLoopExtractor, type ExtractionDocument, type LoopExtractor } from "../ai/extract";
+import { ingestCalendarEvents, type CalendarIngestSummary } from "../ingest/calendar";
 import { ingestMessages, type IngestSummary } from "../ingest/pipeline";
-import type { MailProvider } from "../providers/types";
+import type { MailProvider, NormalizedMessage } from "../providers/types";
 import { dedupeWithinBatch } from "../loops/dedupe";
 import { persistLoops, rescoreOpenLoops } from "../loops/persist";
 import { verifyCandidate, type RejectionReason, type SourceText, type VerifiedLoop } from "../loops/verify";
@@ -18,11 +21,17 @@ export interface PipelineOptions {
   limit?: number;
   /** Provider cursor from the last sync; enables an incremental fetch. */
   cursor?: string | null;
+  /**
+   * Calendar events for the same account, already fetched. Passed in rather
+   * than fetched here so the pipeline stays provider-agnostic and testable.
+   */
+  calendarEvents?: NormalizedMessage[];
   now?: Date;
 }
 
 export interface PipelineSummary {
   ingest: IngestSummary;
+  calendar: CalendarIngestSummary | null;
   sourceItemsExtracted: number;
   candidatesProposed: number;
   candidatesAccepted: number;
@@ -61,6 +70,16 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineSum
     cursor: options.cursor,
   });
 
+  // Calendar events land in the same table as mail, so the extractor sees an
+  // appointment and the email discussing it as one body of context.
+  const calendar = options.calendarEvents?.length
+    ? await ingestCalendarEvents({
+        userId: options.userId,
+        accountId: options.accountId,
+        events: options.calendarEvents,
+      })
+    : null;
+
   // Only unprocessed, non-bulk documents reach the model.
   const pending = await prisma.sourceItem.findMany({
     where: { userId: options.userId, accountId: options.accountId, isBulk: false, processedAt: null },
@@ -70,6 +89,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineSum
 
   const summary: PipelineSummary = {
     ingest,
+    calendar,
     sourceItemsExtracted: pending.length,
     candidatesProposed: 0,
     candidatesAccepted: 0,
@@ -81,12 +101,14 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineSum
 
   if (pending.length === 0) {
     await rescoreOpenLoops(options.userId, now);
+    await runNotifier(options.userId, now);
     log.info("nothing new to extract", { userId: options.userId });
     return summary;
   }
 
   const documents: ExtractionDocument[] = pending.map((document) => ({
     sourceId: document.id,
+    kind: document.kind,
     threadKey: document.threadExternalId ?? document.id,
     subject: document.subject,
     fromName: document.fromName,
@@ -139,6 +161,10 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineSum
   summary.loopsUpdated = persisted.updated;
 
   await rescoreOpenLoops(options.userId, now);
+  // Order matters: scoring first because the notifier reads priority, then
+  // proposals, which only make sense for loops that survived verification.
+  await proposeForUser(options.userId, now);
+  await runNotifier(options.userId, now);
 
   log.info("pipeline complete", {
     userId: options.userId,

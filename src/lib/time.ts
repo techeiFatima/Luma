@@ -1,9 +1,23 @@
 export const HOUR_MS = 60 * 60 * 1000;
 export const DAY_MS = 24 * HOUR_MS;
 
-/** Whole days from `now` until `date`. Negative when the date has passed. */
+function startOfDay(date: Date): number {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy.getTime();
+}
+
+/**
+ * Calendar days from `now` until `date`. Negative when the date has passed.
+ *
+ * Deliberately counts date boundaries crossed rather than elapsed milliseconds.
+ * A deadline at 9am tomorrow is "tomorrow" whether it is currently 8am or 8pm,
+ * which is what a person means — flooring the raw difference would call it
+ * "today" for most of the day, and two surfaces rounding differently would
+ * disagree about the same deadline in front of the user.
+ */
 export function daysUntil(date: Date, now: Date = new Date()): number {
-  return Math.floor((date.getTime() - now.getTime()) / DAY_MS);
+  return Math.round((startOfDay(date) - startOfDay(now)) / DAY_MS);
 }
 
 export function hoursUntil(date: Date, now: Date = new Date()): number {

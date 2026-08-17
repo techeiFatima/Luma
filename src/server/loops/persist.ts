@@ -182,6 +182,14 @@ async function attachEvidence(loopId: string, loop: VerifiedLoop): Promise<void>
  * model involvement.
  */
 export async function rescoreOpenLoops(userId: string, now: Date = new Date()): Promise<number> {
+  // A snooze is a promise to bring something back, so waking is not optional
+  // housekeeping — it is the second half of the feature. Doing it here means a
+  // loop returns on the next sync whether or not anyone opened the dashboard.
+  await prisma.openLoop.updateMany({
+    where: { userId, status: "snoozed", snoozedUntil: { lte: now } },
+    data: { status: "open", snoozedUntil: null },
+  });
+
   const loops = await prisma.openLoop.findMany({
     where: { userId, status: { in: ["open", "snoozed"] } },
   });

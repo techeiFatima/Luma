@@ -1,74 +1,77 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { QuickActions } from "./QuickActions";
 
 /**
  * Status changes are local to Luma — marking a loop done does not touch the
- * user's mailbox. Anything that would leave the app (sending a draft, creating
- * a calendar event) is a separate, explicitly approved action and is not part
- * of this MVP.
+ * user's mailbox. Anything that would leave the app goes through the Action
+ * table and its own approval.
  */
-export function LoopActions({ loopId, status }: { loopId: string; status: string }) {
+export function LoopActions({
+  loopId,
+  status,
+  dueAt,
+  snoozedUntil,
+}: {
+  loopId: string;
+  status: string;
+  dueAt: string | null;
+  snoozedUntil: string | null;
+}) {
   const router = useRouter();
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
 
-  async function update(next: string) {
-    setBusy(next);
+  async function reopen() {
+    setBusy(true);
     setError(null);
     try {
       const response = await fetch(`/api/loops/${loopId}/status`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: next }),
+        body: JSON.stringify({ status: "open" }),
       });
       if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        setError(body?.error?.message ?? "Could not update");
+        const payload = await response.json().catch(() => ({}));
+        setError(payload?.error?.message ?? "That didn't work.");
         return;
       }
-      router.refresh();
+      startTransition(() => router.refresh());
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
-  if (status !== "open") {
-    return (
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-[var(--color-muted)]">
-          Marked {status === "done" ? "done" : "not relevant"}.
-        </span>
-        <button
-          type="button"
-          onClick={() => update("open")}
-          disabled={busy !== null}
-          className="text-sm underline underline-offset-2 disabled:opacity-60"
-        >
-          Reopen
-        </button>
-      </div>
-    );
+  if (status === "open") {
+    return <QuickActions loopId={loopId} dueAt={dueAt} />;
   }
 
+  const label =
+    status === "done"
+      ? "Marked done."
+      : status === "dismissed"
+        ? "Marked as not yours."
+        : snoozedUntil
+          ? `Snoozed until ${new Date(snoozedUntil).toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "short",
+              day: "numeric",
+            })}.`
+          : "Snoozed.";
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-3 text-sm">
+      <span className="text-[var(--color-muted)]">{label}</span>
       <button
         type="button"
-        onClick={() => update("done")}
-        disabled={busy !== null}
-        className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
+        onClick={reopen}
+        disabled={busy}
+        className="text-[var(--color-accent)] underline underline-offset-2 disabled:opacity-60"
       >
-        {busy === "done" ? "Saving…" : "Mark done"}
-      </button>
-      <button
-        type="button"
-        onClick={() => update("dismissed")}
-        disabled={busy !== null}
-        className="rounded-md border border-[var(--color-line)] px-3 py-1.5 text-sm disabled:opacity-60"
-      >
-        {busy === "dismissed" ? "Saving…" : "Not relevant"}
+        {busy ? "Reopening…" : "Reopen"}
       </button>
       {error && <span className="text-xs text-[var(--color-now)]">{error}</span>}
     </div>

@@ -68,15 +68,47 @@ function toListItem(loop: {
   };
 }
 
-export async function listOpenLoops(userId: string, limit = DASHBOARD_LIMIT) {
+/**
+ * What the dashboard treats as needing attention right now.
+ *
+ * A snoozed loop whose time has come counts as active even before anything has
+ * written `open` back to it. The alternative — relying on the background wake
+ * in `rescoreOpenLoops` — would mean a loop stays hidden until the next sync,
+ * which is precisely when a user who snoozed something until this morning
+ * opens the app looking for it.
+ */
+function activeLoopFilter(now: Date) {
+  return {
+    OR: [
+      { status: "open" },
+      { status: "snoozed", snoozedUntil: { lte: now } },
+    ],
+  };
+}
+
+export async function listOpenLoops(
+  userId: string,
+  limit = DASHBOARD_LIMIT,
+  now: Date = new Date(),
+) {
   const loops = await prisma.openLoop.findMany({
-    where: { userId, status: "open" },
+    where: { userId, ...activeLoopFilter(now) },
     include: { _count: { select: { evidence: true } } },
     orderBy: [{ priorityScore: "desc" }, { dueAt: "asc" }],
   });
 
   const items = loops.map(toListItem).sort(compareLoops);
   return { items: items.slice(0, limit), total: items.length };
+}
+
+/** Loops the user deliberately put off, with the time they chose. */
+export async function listSnoozedLoops(userId: string, now: Date = new Date()) {
+  const loops = await prisma.openLoop.findMany({
+    where: { userId, status: "snoozed", snoozedUntil: { gt: now } },
+    include: { _count: { select: { evidence: true } } },
+    orderBy: { snoozedUntil: "asc" },
+  });
+  return loops.map((loop) => ({ ...toListItem(loop), snoozedUntil: loop.snoozedUntil }));
 }
 
 export async function listResolvedLoops(userId: string, limit = 20) {

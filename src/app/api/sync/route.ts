@@ -5,7 +5,8 @@ import { route } from "@/server/http/route";
 import { FixtureMailProvider } from "@/server/providers/fixtures/provider";
 import { authorizedClientForAccount, markAccountRevoked } from "@/server/providers/gmail/oauth";
 import { GmailProvider } from "@/server/providers/gmail/provider";
-import type { MailProvider } from "@/server/providers/types";
+import { GoogleCalendarProvider } from "@/server/providers/google/calendar";
+import type { MailProvider, NormalizedMessage } from "@/server/providers/types";
 import { runPipeline } from "@/server/pipeline/run";
 
 /** How far back a sync looks when the account has never been synced. */
@@ -22,10 +23,28 @@ export const POST = route("sync", async ({ requireUserId, log }) => {
     throw new BadRequestError("No account is connected yet.");
   }
 
-  const provider: MailProvider =
-    account.provider === "fixtures"
-      ? new FixtureMailProvider(account.providerAccountId)
-      : GmailProvider.forAuth(await authorizedClientForAccount(account.id));
+  const isFixtures = account.provider === "fixtures";
+  const auth = isFixtures ? null : await authorizedClientForAccount(account.id);
+
+  const provider: MailProvider = isFixtures
+    ? new FixtureMailProvider(account.providerAccountId)
+    : GmailProvider.forAuth(auth!);
+
+  // Calendar is context, not a second inbox. A failure to read it must not
+  // fail the sync — mail alone still produces a useful answer, and silently
+  // losing the whole run because a calendar call timed out would be a poor
+  // trade. The degradation is logged rather than surfaced as an error.
+  let calendarEvents: NormalizedMessage[] = [];
+  if (auth) {
+    try {
+      calendarEvents = await GoogleCalendarProvider.forAuth(auth).fetchEvents();
+    } catch (error) {
+      log.warn("calendar unavailable; continuing with mail only", {
+        accountId: account.id,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   // With a cursor the provider fetches a delta and `since` is unused. Without
   // one it re-reads a window, overlapping the last sync by a day so a message
@@ -37,7 +56,14 @@ export const POST = route("sync", async ({ requireUserId, log }) => {
     : new Date(Date.now() - INITIAL_LOOKBACK_DAYS * DAY_MS);
 
   try {
-    return await runPipeline({ userId, accountId: account.id, provider, since, cursor });
+    return await runPipeline({
+      userId,
+      accountId: account.id,
+      provider,
+      since,
+      cursor,
+      calendarEvents,
+    });
   } catch (error) {
     // A withdrawn grant is a state change, not a transient failure: record it
     // so the UI stops offering a sync that cannot succeed and asks the user to

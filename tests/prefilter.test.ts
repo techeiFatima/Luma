@@ -75,3 +75,98 @@ describe("prefilter", () => {
     expect(byId.get("fx-011")?.isBulk).toBe(false);
   });
 });
+
+/**
+ * Regression tests for the recall defect.
+ *
+ * An earlier prefilter treated any `noreply@` sender as bulk. That single rule
+ * discarded 7 of 79 known obligations before the model ever saw them, capping
+ * recall at 91% no matter how good extraction got. These cases are the ones it
+ * threw away — they are the reason sender shape is now only a weak signal.
+ */
+describe("prefilter: obligations from automated senders", () => {
+  const cases = [
+    {
+      name: "a background check that needs consent",
+      from: "noreply@verifiedscreening.example.com",
+      subject: "Action needed: authorize your background check",
+      body: "Your employer has requested a background check. Please sign the authorization form within 5 business days so we can proceed.",
+    },
+    {
+      name: "an expiring certificate",
+      from: "noreply@certauthority.example.com",
+      subject: "Your SSL certificate expires in 14 days",
+      body: "The certificate for your domain expires on April 12. Renew it before that date to avoid an outage on your site.",
+    },
+    {
+      name: "library items coming due",
+      from: "noreply@citylibrary.example.org",
+      subject: "Items due soon",
+      body: "The following items are due back on April 3. Please return or renew them to avoid a late fee being applied to your account.",
+    },
+    {
+      name: "a password about to expire",
+      from: "no-reply@it.company.example.com",
+      subject: "Your password expires in 3 days",
+      body: "Your network password expires on Thursday. Change it before then or you will be locked out of your account.",
+    },
+    {
+      name: "a direct question routed through a notifications address",
+      from: "notifications@docs.example.com",
+      subject: "Priya commented on your document",
+      body: "Priya asked: can you confirm the Q3 numbers in section 4 before we send this to the board on Monday?",
+    },
+  ];
+
+  for (const testCase of cases) {
+    it(`keeps ${testCase.name}`, () => {
+      const result = classifyMessage(
+        message({
+          fromEmail: testCase.from,
+          subject: testCase.subject,
+          bodyText: testCase.body,
+        }),
+      );
+      expect(result.isBulk, `dropped as ${result.reason}`).toBe(false);
+    });
+  }
+
+  it("still filters a no-reply address when a second signal agrees", () => {
+    // One weak signal is not enough; two is. Here: no-reply sender plus the
+    // message saying outright that nothing is being asked of the reader.
+    const result = classifyMessage(
+      message({
+        fromEmail: "noreply@bank.example.com",
+        subject: "Your statement is ready",
+        bodyText:
+          "Your monthly statement is now available to view. This is a confirmation only and no action is required from you.",
+      }),
+    );
+    expect(result.isBulk).toBe(true);
+    expect(result.reason).toContain("weak:");
+  });
+
+  it("filters a sender whose address names the content as promotional", () => {
+    const result = classifyMessage(
+      message({ fromEmail: "deals@retailer.example.com", subject: "Your weekend picks" }),
+    );
+    expect(result).toEqual({ isBulk: true, reason: "sender:marketing" });
+  });
+});
+
+describe("prefilter: short messages", () => {
+  it("keeps a short commitment the user sent themselves", () => {
+    // 39 characters — under the old 40-char floor, and a real promise.
+    const result = classifyMessage(
+      message({
+        labels: ["SENT"],
+        bodyText: "Sure, I'll get to it today or tomorrow.",
+      }),
+    );
+    expect(result.isBulk).toBe(false);
+  });
+
+  it("still drops a message with nothing quotable in it", () => {
+    expect(classifyMessage(message({ bodyText: "ok thanks" })).isBulk).toBe(true);
+  });
+});

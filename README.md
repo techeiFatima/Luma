@@ -14,11 +14,21 @@ Requires **Node.js 22+**. No database server needed — SQLite by default.
 
 ```bash
 git clone <repo> && cd Luma
-npm install
+npm install                # also generates the Prisma client
 cp .env.example .env       # works as-is for local development
 npm run db:migrate         # creates prisma/luma.db and applies migrations
-npm run db:seed            # optional: a demo user with sample data
+npm run db:seed            # a demo user with sample loops to look at
 npm run dev                # http://localhost:3000
+```
+
+If `npm install` warns that install scripts were blocked (newer npm versions do
+this by default), approve them and rebuild before the first run — Prisma's
+engines and the SQLite binding are both built by those scripts:
+
+```bash
+npm approve-scripts --allow-scripts-pending
+npm rebuild
+npx prisma generate
 ```
 
 Or in one step:

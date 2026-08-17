@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ActionPanel } from "@/components/ActionPanel";
 import { LoopActions } from "@/components/LoopActions";
+import { prisma } from "@/lib/db";
 import { getSessionUserId } from "@/lib/session";
 import { formatRelativeDue, formatSentAt } from "@/lib/time";
 import { getLoopDetail } from "@/server/loops/queries";
@@ -20,6 +22,20 @@ export default async function LoopDetailPage({
   const loop = await getLoopDetail(userId, id);
   if (!loop) notFound();
 
+  const actions = await prisma.action.findMany({
+    where: { userId, loopId: loop.id, status: { in: ["proposed", "executed"] } },
+    orderBy: { proposedAt: "asc" },
+    select: {
+      id: true,
+      type: true,
+      status: true,
+      summary: true,
+      requiresApproval: true,
+      result: true,
+      error: true,
+    },
+  });
+
   const category = isLoopCategory(loop.category) ? loop.category : "other";
   const claimEvidence = loop.evidence.filter((item) => item.supports === "claim");
 
@@ -33,14 +49,21 @@ export default async function LoopDetailPage({
         <p className="text-xs uppercase tracking-wide text-[var(--color-muted)]">
           {CATEGORY_LABELS[category]}
         </p>
-        <h1 className="text-2xl font-semibold leading-tight">{loop.title}</h1>
+        <h1 className="answer text-2xl font-normal leading-tight">{loop.title}</h1>
         <p className="text-sm leading-relaxed text-[var(--color-muted)]">{loop.summary}</p>
       </header>
 
-      <LoopActions loopId={loop.id} status={loop.status} />
+      <LoopActions
+        loopId={loop.id}
+        status={loop.status}
+        dueAt={loop.dueAt?.toISOString() ?? null}
+        snoozedUntil={loop.snoozedUntil?.toISOString() ?? null}
+      />
+
+      <ActionPanel actions={actions} />
 
       {/* Facts and inference are presented separately, and labelled. */}
-      <section className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
+      <section className="card px-5 py-4">
         <h2 className="text-sm font-semibold">What the source says</h2>
         <dl className="mt-3 space-y-2 text-sm">
           <div className="flex gap-3">
@@ -96,7 +119,7 @@ export default async function LoopDetailPage({
         </dl>
       </section>
 
-      <section className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
+      <section className="card px-5 py-4">
         <h2 className="text-sm font-semibold">What Luma worked out</h2>
         <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
           {loop.inferenceNotes ?? "Everything above is stated directly in the source."}
@@ -115,7 +138,7 @@ export default async function LoopDetailPage({
         {claimEvidence.map((item) => (
           <article
             key={item.id}
-            className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-4"
+            className="card px-4 py-3"
           >
             <div className="flex flex-wrap items-baseline gap-x-2 text-xs text-[var(--color-muted)]">
               <span className="font-medium text-[var(--color-ink)]">

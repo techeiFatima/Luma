@@ -11,24 +11,37 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen">
-        <header className="border-b border-[var(--color-line)] bg-[var(--color-surface)]">
-          <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
-            <Link href="/" className="flex items-baseline gap-2">
-              <span className="text-lg font-semibold tracking-tight">Luma</span>
-              <span className="text-sm text-[var(--color-muted)]">What am I forgetting?</span>
+      <body className="flex min-h-screen flex-col">
+        {/*
+          The header stays quiet: no counts, no badges, no navigation beyond
+          settings. Anything with a number on it competes with the one sentence
+          this product exists to deliver.
+        */}
+        <header className="border-b border-[var(--color-line)]">
+          <div className="mx-auto flex max-w-2xl items-center justify-between px-6 py-4">
+            <Link href="/" className="group flex items-center gap-2">
+              <span
+                aria-hidden
+                className="inline-block size-2 rounded-full bg-[var(--color-accent)]"
+              />
+              <span className="text-[15px] font-semibold tracking-tight">Luma</span>
             </Link>
-            <nav className="flex items-center gap-4 text-sm text-[var(--color-muted)]">
-              <Link href="/settings" className="hover:text-[var(--color-ink)]">
+            <nav className="text-sm">
+              <Link
+                href="/settings"
+                className="text-[var(--color-muted)] transition-colors hover:text-[var(--color-ink)]"
+              >
                 Settings
               </Link>
             </nav>
           </div>
         </header>
-        <main className="mx-auto max-w-3xl px-6 py-8">{children}</main>
-        <footer className="mx-auto max-w-3xl px-6 pb-10 text-xs text-[var(--color-muted)]">
-          Luma reads email to find open loops. It never sends, deletes, or changes anything without
-          your explicit approval.
+
+        <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">{children}</main>
+
+        <footer className="mx-auto w-full max-w-2xl px-6 pb-10 pt-6 text-xs leading-relaxed text-[var(--color-muted)]">
+          Luma reads your mail and calendar to find unfinished things. It cannot send, delete, or
+          change anything, and nothing leaves the app without your explicit approval.
         </footer>
       </body>
     </html>
