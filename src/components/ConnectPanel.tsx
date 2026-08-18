@@ -1,56 +1,134 @@
 import { DemoButton } from "./DemoButton";
 
 /**
- * First-run state. Permissions are spelled out before the user clicks, not
- * buried in a consent screen they will skim.
+ * The first thing anyone sees.
+ *
+ * Written for the case that actually happens on a fresh clone: nothing is
+ * configured yet. An earlier version showed a "Connect Gmail" button that did
+ * nothing without Google credentials and a sample-inbox button that failed
+ * without an API key, so the whole page was inert — which is exactly how it
+ * gets described. Now the path that always works comes first, and the two
+ * optional credentials are shown as status with the steps to obtain them,
+ * rather than as an error the reader has to decode.
  */
-export function ConnectPanel({ googleConfigured }: { googleConfigured: boolean }) {
+export function ConnectPanel({
+  googleConfigured,
+  aiConfigured,
+}: {
+  googleConfigured: boolean;
+  aiConfigured: boolean;
+}) {
   return (
-    <div className="space-y-6">
-      <section className="rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-6">
-        <h1 className="text-xl font-semibold">What am I forgetting?</h1>
-        <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
-          Connect Gmail and Luma will read your recent mail to find the unfinished things that may
-          still need you — deadlines, forms, renewals, payments, replies you owe. You don&apos;t
-          create any of it by hand.
+    <div className="space-y-10">
+      <section>
+        <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-muted)]">
+          What am I forgetting?
         </p>
-
-        <div className="mt-5 rounded-md border border-[var(--color-line)] bg-[var(--color-canvas)] p-4">
-          <h2 className="text-sm font-semibold">What Luma is allowed to do</h2>
-          <ul className="mt-2 space-y-1 text-sm text-[var(--color-muted)]">
-            <li>· Read your Gmail messages — read-only access.</li>
-            <li>· Read your email address, to label the connected account.</li>
-          </ul>
-          <h2 className="mt-4 text-sm font-semibold">What it cannot do</h2>
-          <ul className="mt-2 space-y-1 text-sm text-[var(--color-muted)]">
-            <li>· Send, reply to, delete, or modify any mail.</li>
-            <li>· Take any action outside Luma without your explicit approval.</li>
-          </ul>
-        </div>
-
-        {googleConfigured ? (
-          <a
-            href="/api/auth/google"
-            className="mt-5 inline-block rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white"
-          >
-            Connect Gmail
-          </a>
-        ) : (
-          <p className="mt-5 rounded-md border border-[var(--color-line)] bg-[var(--color-canvas)] px-4 py-3 text-sm text-[var(--color-muted)]">
-            Gmail isn&apos;t configured on this instance. Set <code>GOOGLE_CLIENT_ID</code> and{" "}
-            <code>GOOGLE_CLIENT_SECRET</code> to enable it — see <code>.env.example</code>.
-          </p>
-        )}
+        <h1 className="answer mt-3 text-3xl font-normal sm:text-4xl">
+          Luma reads your mail and tells you what you&apos;re forgetting.
+        </h1>
+        <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-[var(--color-ink-soft)]">
+          Deadlines, forms, renewals, payments, replies you owe. You never type any of it in, and
+          nothing appears unless Luma can point at the sentence it came from.
+        </p>
       </section>
 
-      <section className="rounded-lg border border-dashed border-[var(--color-line)] p-6">
-        <h2 className="text-sm font-semibold">Just want to see how it works?</h2>
-        <p className="mt-1 text-sm text-[var(--color-muted)]">
-          Run the pipeline against a sample inbox. Same extraction, same verification, same
-          prioritization — no account connected.
+      {/* The path that works with nothing configured, first. */}
+      <section className="card px-6 py-5">
+        <h2 className="text-sm font-semibold">See it working now</h2>
+        <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
+          Open a sample inbox — no account, no keys, nothing to set up.
+          {aiConfigured
+            ? " Your API key is configured, so the real pipeline will analyze it."
+            : " Results are prepared rather than analyzed until an API key is added."}
         </p>
         <div className="mt-4">
           <DemoButton />
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--color-muted)]">
+          Connect your own accounts
+        </h2>
+
+        <div className="card px-6 py-5">
+          <div className="flex items-baseline justify-between gap-4">
+            <h3 className="text-sm font-semibold">Gmail and Google Calendar</h3>
+            <span
+              className={`text-xs ${
+                googleConfigured ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"
+              }`}
+            >
+              {googleConfigured ? "ready" : "needs setup"}
+            </span>
+          </div>
+
+          {googleConfigured ? (
+            <>
+              <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+                Read-only access. Luma cannot send, delete, or change anything in your account.
+              </p>
+              <a
+                href="/api/auth/google"
+                className="mt-4 inline-block rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white"
+              >
+                Connect Gmail
+              </a>
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+                Google requires credentials from your own account before any app can request
+                access. This takes about five minutes, once:
+              </p>
+              <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm text-[var(--color-ink-soft)]">
+                <li>
+                  In{" "}
+                  <a
+                    className="underline underline-offset-2"
+                    href="https://console.cloud.google.com/apis/credentials"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Google Cloud Console
+                  </a>
+                  , create a project and enable the <strong>Gmail API</strong> and{" "}
+                  <strong>Google Calendar API</strong>.
+                </li>
+                <li>
+                  Create an OAuth client of type <strong>Web application</strong>, with redirect URI{" "}
+                  <code className="rounded bg-[var(--color-canvas)] px-1 py-0.5 text-xs">
+                    http://localhost:3000/api/auth/google/callback
+                  </code>
+                </li>
+                <li>On the consent screen, add your own address as a test user.</li>
+                <li>
+                  Put the client ID and secret in <code className="text-xs">.env</code> as{" "}
+                  <code className="text-xs">GOOGLE_CLIENT_ID</code> and{" "}
+                  <code className="text-xs">GOOGLE_CLIENT_SECRET</code>, then restart.
+                </li>
+              </ol>
+            </>
+          )}
+        </div>
+
+        <div className="card px-6 py-5">
+          <div className="flex items-baseline justify-between gap-4">
+            <h3 className="text-sm font-semibold">Reading your mail with AI</h3>
+            <span
+              className={`text-xs ${
+                aiConfigured ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"
+              }`}
+            >
+              {aiConfigured ? "ready" : "needs setup"}
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
+            {aiConfigured
+              ? "Configured. Luma will analyze messages and check every claim against its source."
+              : "Add ANTHROPIC_API_KEY to your .env to have Luma actually read messages. Roughly a cent per email."}
+          </p>
         </div>
       </section>
     </div>

@@ -4,20 +4,29 @@ import { prisma } from "@/lib/db";
 import { ForbiddenError } from "@/lib/errors";
 import { setSessionCookie } from "@/lib/session";
 import { route } from "@/server/http/route";
+import { DEMO_EMAIL, installSampleLoops } from "@/server/demo/sample";
+import { proposeForUser } from "@/server/domain/propose";
 import { FixtureMailProvider } from "@/server/providers/fixtures/provider";
 import { runPipeline } from "@/server/pipeline/run";
 
-const DEMO_EMAIL = "demo@example.com";
-
 /**
- * Runs the real pipeline over the sample inbox.
+ * Signs in to a sample inbox so the product can be judged without credentials.
  *
- * This is not a mock of the product — extraction, verification, dedupe, and
- * prioritization all run exactly as they do for a connected mailbox. Only the
- * source of the messages differs, which is the point of the provider interface.
+ * Two modes, and the difference is stated rather than hidden:
  *
- * It signs a user in without OAuth, so it is gated on `demoMode`: on outside
- * production, and off inside it unless explicitly enabled.
+ *   with an API key — the real pipeline runs over the sample messages.
+ *     Extraction, verification, dedupe, and prioritization all execute exactly
+ *     as they would for a connected mailbox; only the source of the mail differs.
+ *
+ *   without one — a prepared set of loops is installed instead.
+ *     Nothing is analyzed, and the response says so, so the dashboard is never
+ *     passing off fixtures as something a model produced.
+ *
+ * The second mode exists because requiring a key before someone can see the
+ * dashboard at all made the first-run page a dead end: neither button worked,
+ * and the app was, accurately, "just a page".
+ *
+ * Gated on `demoMode`: on outside production, off inside it unless enabled.
  */
 export const POST = route("demo", async ({ log }) => {
   if (!getConfig().demoMode) {
@@ -49,11 +58,25 @@ export const POST = route("demo", async ({ log }) => {
   });
 
   await setSessionCookie(user.id);
-  log.info("running sample inbox", { userId: user.id });
 
-  return runPipeline({
+  if (!getConfig().ai.enabled) {
+    const installed = await installSampleLoops(user.id, account.id);
+    await proposeForUser(user.id);
+    log.info("installed sample loops (no api key configured)", { userId: user.id });
+    return {
+      mode: "sample" as const,
+      analyzed: false,
+      loops: installed.loops,
+      note: "Prepared sample results. Add ANTHROPIC_API_KEY to analyze the sample inbox for real.",
+    };
+  }
+
+  log.info("running the real pipeline over the sample inbox", { userId: user.id });
+  const summary = await runPipeline({
     userId: user.id,
     accountId: account.id,
     provider: new FixtureMailProvider(DEMO_EMAIL),
   });
+
+  return { mode: "analyzed" as const, analyzed: true, ...summary };
 });

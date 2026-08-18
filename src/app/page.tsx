@@ -16,12 +16,18 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const userId = await getSessionUserId();
-  const googleConfigured = getConfig().google.enabled;
+  const config = getConfig();
+  const googleConfigured = config.google.enabled;
+  const aiConfigured = config.ai.enabled;
 
-  if (!userId) return <ConnectPanel googleConfigured={googleConfigured} />;
+  if (!userId) {
+    return <ConnectPanel googleConfigured={googleConfigured} aiConfigured={aiConfigured} />;
+  }
 
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) return <ConnectPanel googleConfigured={googleConfigured} />;
+  if (!user) {
+    return <ConnectPanel googleConfigured={googleConfigured} aiConfigured={aiConfigured} />;
+  }
 
   // Urgency is a function of the current time, so scores are refreshed on read.
   // This also wakes any snooze whose time has come.
